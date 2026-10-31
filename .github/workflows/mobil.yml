@@ -1,0 +1,108 @@
+# Mobilní verze FTI zdarma na GitHub Pages — běží i když je PC vypnuté.
+# Každých 30 minut: stáhne data ze stejných zdrojů jako aplikace na PC, uloží snímek
+# (backend/app/export_static.py) a zveřejní webovou aplikaci, kterou jde v telefonu
+# přidat na plochu. Živé ceny zlata, EUR/USD a GBP/USD si telefon bere přímo z Krakenu.
+# Veřejné repozitáře mají GitHub Actions i Pages zdarma.
+name: Mobilni verze
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Python knihovny (bez desktopového okna, PyTorch jen pro CPU)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          grep -v -i '^pywebview' backend/requirements.txt > /tmp/req.txt
+          pip install -r /tmp/req.txt
+
+      - name: Překladový model angličtina → čeština (z mezipaměti)
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/argos-translate
+          key: argos-en-cs-v1
+
+      - name: Instalace překladového modelu (jen poprvé)
+        run: |
+          python - <<'EOF'
+          import argostranslate.package as p, argostranslate.translate as t
+          if not any(l.code == "cs" for l in t.get_installed_languages()):
+              p.update_package_index()
+              pkg = next(x for x in p.get_available_packages() if x.from_code == "en" and x.to_code == "cs")
+              p.install_from_path(pkg.download())
+          EOF
+
+      - name: Stav z minulého běhu (databáze, historie skóre, kalendář)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            backend/fti.db
+            backend/cache
+          key: fti-state-${{ github.run_id }}
+          restore-keys: fti-state-
+
+      - name: Data a snímek pro telefon
+        working-directory: backend
+        env:
+          FTI_DISABLE_SCHEDULER: "1"
+        run: python -m app.export_static ../site --cycle
+
+      - name: Uložit stav pro příští běh
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            backend/fti.db
+            backend/cache
+          key: fti-state-${{ github.run_id }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Webová aplikace
+        working-directory: frontend
+        env:
+          VITE_STATIC: "1"
+        run: |
+          npm install --no-audit --no-fund
+          npx vite build --outDir ../site --emptyOutDir false
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

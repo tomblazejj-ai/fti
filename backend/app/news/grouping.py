@@ -1,0 +1,83 @@
+"""Group stored news items into *events* for display.
+
+The ingestion layer already marks near-duplicates (NewsItem.duplicate_of_id,
+see dedupe.py) so scoring never double-counts. The UI needs the same truth:
+three outlets reporting one Fed decision is ONE event with three reports,
+not three independent confirmations. Pure function, tested in
+tests/test_grouping.py.
+"""
+
+from __future__ import annotations
+
+from app.models import NewsItem
+
+IMPACT_THRESHOLD = 0.1  # same threshold as PillarResult.impact
+
+
+def _impact(score: float) -> str:
+    if score > IMPACT_THRESHOLD:
+        return "bullish"
+    if score < -IMPACT_THRESHOLD:
+        return "bearish"
+    return "neutral"
+
+
+def _czech(item: NewsItem) -> tuple[str, bool]:
+    """(headline to show, is it a machine translation)"""
+    if item.title_cs:
+        return item.title_cs, item.language != "cs"
+    return item.title, False
+
+
+def _report(item: NewsItem) -> dict:
+    title, translated = _czech(item)
+    return {
+        "id": item.id,
+        "title": title,
+        "title_original": item.title,
+        "translated": translated,
+        "source": item.source,
+        "url": item.url or None,
+        "published_at": item.published_at,
+    }
+
+
+def group_into_events(items: list[NewsItem], factor_to_pillar: dict[str, str], instrument: str) -> list[dict]:
+    """Return events, newest first. Only items relevant to `instrument`
+    (tagged with the instrument, or carrying a factor that feeds one of its
+    pillars) are included; an event is kept if its ORIGINAL is relevant.
+    """
+    originals = {i.id: i for i in items if i.duplicate_of_id is None}
+    duplicates_by_original: dict[int, list[NewsItem]] = {}
+    for item in items:
+        if item.duplicate_of_id is not None and item.duplicate_of_id in originals:
+            duplicates_by_original.setdefault(item.duplicate_of_id, []).append(item)
+
+    events = []
+    for original in originals.values():
+        relevant_factors = [f for f in original.factor_tags if f in factor_to_pillar]
+        if not relevant_factors and instrument not in original.instrument_tags:
+            continue
+        scores = [original.sentiment_scores.get(f, 0.0) for f in relevant_factors]
+        net = sum(scores) / len(scores) if scores else 0.0
+        reports = [original, *sorted(duplicates_by_original.get(original.id, []), key=lambda n: n.published_at)]
+        headline, translated = _czech(original)
+        events.append(
+            {
+                "event_id": original.id,
+                "headline": headline,
+                "headline_original": original.title,
+                "translated": translated,
+                "language": original.language,
+                "source": original.source,
+                "url": original.url or None,
+                "published_at": original.published_at,
+                "instrument_tags": original.instrument_tags,
+                "factors": [{"factor": f, "pillar": factor_to_pillar[f], "sentiment": original.sentiment_scores.get(f, 0.0)} for f in relevant_factors],
+                "impact": _impact(net),
+                "report_count": len(reports),
+                "reports": [_report(r) for r in reports],
+            }
+        )
+    events.sort(key=lambda e: e["published_at"], reverse=True)
+    return events
