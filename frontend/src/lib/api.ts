@@ -1,4 +1,4 @@
-import type { CalendarAll, CandlesResponse, MarketsResponse, TickersResponse } from "./types";
+import type { AuditRow, CalendarAll, CandlesResponse, MarketsResponse, SourcesResponse, TickersResponse } from "./types";
 
 // Same-origin by default (the web build is served by FastAPI itself).
 let baseUrl = "";
@@ -24,11 +24,13 @@ const STATIC_FILES: Record<string, string> = {
   "/api/markets": "data/markets.json",
   "/api/calendar": "data/calendar.json",
   "/api/tickers": "data/tickers.json",
+  "/api/data/audit": "data/audit.json",
+  "/api/sources": "data/sources.json",
 };
 
 export function staticPath(path: string): string | null {
   const [p, q] = path.split("?");
-  const m = p.match(/^\/api\/instruments\/([A-Z]+)\/candles$/);
+  const m = p.match(/^\/api\/instruments\/([A-Z0-9.]+)\/candles$/);
   if (m) return `data/candles-${m[1]}-${new URLSearchParams(q ?? "").get("tf")}.json`;
   return STATIC_FILES[p] ?? null;
 }
@@ -64,11 +66,29 @@ async function request<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function post<T>(path: string, body: unknown): Promise<T> {
+  if (STATIC) throw new ApiError(404, "Nastavení jde měnit jen v aplikaci na PC.");
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  } catch {
+    throw new ApiError(0, "Aplikace neběží.");
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new ApiError(response.status, String(data?.detail ?? response.statusText));
+  return data as T;
+}
+
 export const api = {
   markets: () => request<MarketsResponse>("/api/markets"),
   calendar: () => request<CalendarAll>("/api/calendar"),
   tickers: () => (STATIC ? staticTickers() : request<TickersResponse>("/api/tickers")),
   candles: (code: string, tf: string) => request<CandlesResponse>(`/api/instruments/${code}/candles?tf=${encodeURIComponent(tf)}`),
+  audit: () => request<{ computed_at: string; rows: AuditRow[] }>("/api/data/audit"),
+  sources: () => request<SourcesResponse>("/api/sources"),
+  setKey: (name: string, value: string) => post<{ keys: SourcesResponse["keys"] }>("/api/keys", { name, value }),
+  updateSettings: (patch: Record<string, unknown>) => post<Record<string, unknown>>("/api/settings", { patch }),
+  mt5Test: () => post<{ ok: boolean; bars: number; symbol: string; broker: string; server: string }>("/api/mt5/test", {}),
 };
 
 // Kraken's public API allows browser requests, so the phone version shows live prices

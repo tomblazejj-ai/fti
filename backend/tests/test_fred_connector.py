@@ -9,7 +9,7 @@ def _client(handler):
 
 
 def test_keyless_csv_path_parses_and_drops_missing_values(monkeypatch):
-    monkeypatch.setattr(fred.settings, "fred_api_key", "")
+    monkeypatch.setattr(fred.secrets, "get", lambda name: "")
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -23,7 +23,7 @@ def test_keyless_csv_path_parses_and_drops_missing_values(monkeypatch):
 
 
 def test_csv_with_unexpected_header_is_unavailable_not_guessed(monkeypatch):
-    monkeypatch.setattr(fred.settings, "fred_api_key", "")
+    monkeypatch.setattr(fred.secrets, "get", lambda name: "")
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="<html>maintenance</html>")
@@ -33,7 +33,7 @@ def test_csv_with_unexpected_header_is_unavailable_not_guessed(monkeypatch):
 
 
 def test_csv_requests_respect_crawl_delay(monkeypatch):
-    monkeypatch.setattr(fred.settings, "fred_api_key", "")
+    monkeypatch.setattr(fred.secrets, "get", lambda name: "")
     monkeypatch.setattr(fred, "_last_csv_request_at", None)
     sleeps = []
 
@@ -49,7 +49,7 @@ def test_csv_requests_respect_crawl_delay(monkeypatch):
 
 
 def test_api_path_used_when_key_present(monkeypatch):
-    monkeypatch.setattr(fred.settings, "fred_api_key", "dummy-key")
+    monkeypatch.setattr(fred.secrets, "get", lambda name: "dummy-key" if name == "FRED_API_KEY" else "")
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert "api.stlouisfed.org" in str(request.url)
@@ -64,7 +64,7 @@ def test_api_path_used_when_key_present(monkeypatch):
 
 
 def test_http_error_is_unavailable(monkeypatch):
-    monkeypatch.setattr(fred.settings, "fred_api_key", "")
+    monkeypatch.setattr(fred.secrets, "get", lambda name: "")
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503)

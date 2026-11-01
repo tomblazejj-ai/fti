@@ -49,13 +49,18 @@ def build(payload: dict, macro: dict, now: dt.datetime, market_open: bool) -> li
     # prices — the only truly live input
     price_time = m.get("price_time")
     age_min = (_age_days(price_time, now) or 0) * 1440
+    gold = (payload.get("gold_data") or {})
+    best = next((gold[tf] for tf in ("M15", "H1", "D1") if (gold.get(tf) or {}).get("bars")), None)
     if not price_time:
-        st, note = "missing", "Kraken teď nevrátil svíčky."
+        st, note = "missing", "Pro XAUUSD teď není připojený žádný zdroj (MT5 nebo OANDA); PAXG se nepoužívá."
     elif not market_open:
         st, note = "closed", "Spotový trh je zavřený — poslední svíčka je z jeho uzavření, to je správně."
     else:
         st, note = ("ok", "") if age_min <= 30 else ("late", f"Poslední svíčka je stará {age_min:.0f} min.")
-    rows.append(_row("price", "Cena zlata a svíčky M15–W1", "Kraken PAXG/USD", "živě · graf 60 s · výpočty 5 min", price_time, st, note))
+    if best and best.get("close_only"):
+        note = (note + " " if note else "") + "Jen denní referenční cena (NBP), intradenní data XAUUSD nejsou připojena."
+    rows.append(_row("price", "Cena XAUUSD a svíčky", (best or {}).get("source") or "není připojen zdroj XAUUSD",
+                     "podle zdroje", price_time, st, note))
 
     rows.append(_row("tech", "Technika, trendy, úrovně, verdikt", "výpočet aplikace", "každých 5 minut", now.isoformat(), "ok",
                      "Denní svíčka končí o půlnoci UTC (OANDA/TradingView ve 23:00 našeho času) — hodnoty se mohou mírně lišit."))
@@ -119,17 +124,17 @@ def build(payload: dict, macro: dict, now: dt.datetime, market_open: bool) -> li
                          "denně · ropa týdně", oldest, "late" if late else "ok",
                          (f"Zpožděné: {', '.join(q['label'] for q in late)}." if late else
                           f"Ropa WTI k {oil['as_of']} — EIA ji zveřejňuje jednou týdně." if oil else "")))
-    rows.append(_row("corr", "Korelace zlata s dolarem a EUR/USD", "ECB (denní kurzy) + PAXG/USD", "denně",
+    rows.append(_row("corr", "Korelace zlata s dolarem a EUR/USD", "ECB (denní kurzy) + XAUUSD", "denně",
                      (payload.get("dxy") or {}).get("ecb_date"), "ok" if (payload.get("dxy") or {}).get("ecb_date") else "missing"))
 
     s = payload.get("seasonality")
-    rows.append(_row("season", "Sezónnost", "Kraken PAXG/USD týdenní", "týdně", f"{s['years_from']}–{s['years_to']}" if s else None,
-                     "ok" if s else "missing", "Jen ~7 let historie." if s else ""))
+    rows.append(_row("season", "Sezónnost", "XAUUSD týdenní", "týdně", f"{s['years_from']}–{s['years_to']}" if s else None,
+                     "ok" if s else "missing", ""))
 
     # --- fundamental score and the extra data sets (2026-10)
     tra = payload.get("tra") or {}
     xau = tra.get("xau") or {}
-    rows.append(_row("tra", "Fundamentální skóre (11 kategorií)", "FRED, CFTC, Světová banka, Kraken — výpočet aplikace",
+    rows.append(_row("tra", "Fundamentální skóre (11 kategorií)", "FRED, CFTC, Světová banka, XAUUSD — výpočet aplikace",
                      "každých 5 minut · makro data měsíčně", tra.get("as_of"), "ok" if xau and not xau.get("missing") else
                      "late" if xau else "missing",
                      f"Bez dat: {', '.join(xau['missing'])}." if xau.get("missing") else ""))

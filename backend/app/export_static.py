@@ -18,8 +18,10 @@ import logging
 import sys
 from pathlib import Path
 
-CANDLES = {"XAUUSD": ["H4", "D1", "W1"], "EURUSD": ["H4", "D1", "W1"], "GBPUSD": ["H4", "D1", "W1"],
-           "USDJPY": ["D1", "W1"], "USOIL": ["D1", "W1"]}
+# each instrument's own data only (XAUUSD without a broker feed has just the NBP daily reference)
+CANDLES = {"XAUUSD": ["H4", "D1", "W1"], "PAXGUSD": ["H4", "D1", "W1"], "EURUSD": ["H4", "D1", "W1"],
+           "GBPUSD": ["H4", "D1", "W1"], "USDJPY": ["H4", "D1", "W1"], "USOIL": ["D1", "W1"]}
+PRIVATE = ("mt5", "keys", "oanda")  # never published: settings and key status of this PC
 
 
 def export(out_dir: Path, run_cycle: bool = False) -> list[str]:
@@ -41,6 +43,8 @@ def export(out_dir: Path, run_cycle: bool = False) -> list[str]:
         "/api/calendar": "calendar.json",
         "/api/status": "status.json",
         "/api/tickers": "tickers.json",
+        "/api/data/audit": "audit.json",
+        "/api/sources": "sources.json",
     }
     for code, tfs in CANDLES.items():
         for tf in tfs:
@@ -51,7 +55,10 @@ def export(out_dir: Path, run_cycle: bool = False) -> list[str]:
         if resp.status_code != 200:
             problems.append(f"{url}: {resp.status_code} {resp.text[:120]}")
             continue
-        (data / name).write_text(json.dumps(resp.json(), ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        body = resp.json()
+        if name == "sources.json":
+            body = {k: v for k, v in body.items() if k not in PRIVATE}
+        (data / name).write_text(json.dumps(body, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     return problems
 
 

@@ -1,0 +1,71 @@
+"""API keys and other secrets — only in backend/.env on this PC (git-ignored), or in the
+environment (GitHub Actions secrets for the phone build). Never sent to the frontend, never logged.
+
+The frontend can only ask whether a key is set (`status()`) and replace it (`set_key()`).
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import threading
+
+from app.config import BACKEND_DIR
+
+ENV_FILE = BACKEND_DIR / ".env"
+KEYS = {
+    "FRED_API_KEY": "FRED (oficiální API, klíč zdarma po registraci na fred.stlouisfed.org)",
+    "OANDA_API_TOKEN": "OANDA v20 (token zdarma k demo účtu, jen tržní data)",
+}
+_lock = threading.Lock()
+_VALID = re.compile(r"^[A-Za-z0-9_\-\.]{8,200}$")
+
+
+def _read_file() -> dict[str, str]:
+    out: dict[str, str] = {}
+    try:
+        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            out[k.strip()] = v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return out
+
+
+def get(name: str) -> str:
+    """The key from the environment first (GitHub secrets), then backend/.env. Empty when unset."""
+    value = os.environ.get(name, "").strip()
+    if value:
+        return value
+    return _read_file().get(name, "")
+
+
+def status() -> list[dict]:
+    """Which keys are set — never the key itself, only its last 4 characters."""
+    out = []
+    for name, label in KEYS.items():
+        v = get(name)
+        out.append({"name": name, "label": label, "set": bool(v), "hint": f"…{v[-4:]}" if len(v) >= 8 else None})
+    return out
+
+
+def set_key(name: str, value: str) -> None:
+    """Write (or remove with an empty value) one key in backend/.env. Validates the format."""
+    if name not in KEYS:
+        raise ValueError("Neznámý klíč.")
+    value = value.strip()
+    if value and not _VALID.match(value):
+        raise ValueError("Klíč má neplatný formát (jen písmena, číslice, -, _ a . bez mezer).")
+    with _lock:
+        lines = []
+        try:
+            lines = ENV_FILE.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            pass
+        lines = [ln for ln in lines if not ln.strip().startswith(f"{name}=")]
+        if value:
+            lines.append(f"{name}={value}")
+        ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")

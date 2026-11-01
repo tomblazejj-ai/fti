@@ -20,7 +20,8 @@ import zipfile
 import httpx
 
 HIST_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.zip"
-CURRENCIES = ("USD", "JPY", "GBP", "CAD", "SEK", "CHF")
+CURRENCIES = ("USD", "JPY", "GBP", "CAD", "SEK", "CHF")  # required on a day (the dollar index needs them all)
+OPTIONAL = ("AUD", "NZD")  # added when the day has them (FX crosses of the instrument registry)
 CACHE_HOURS = 6
 
 _cache: dict[str, object] = {"at": None, "rates": None}
@@ -36,9 +37,15 @@ def parse_csv(text: str) -> dict[str, dict[str, float]]:
     out: dict[str, dict[str, float]] = {}
     for row in csv.DictReader(io.StringIO(text)):
         try:
-            out[row["Date"]] = {c: float(row[c]) for c in CURRENCIES}
+            day = {c: float(row[c]) for c in CURRENCIES}
         except (KeyError, ValueError, TypeError):
             continue
+        for c in OPTIONAL:
+            try:
+                day[c] = float(row[c])
+            except (KeyError, ValueError, TypeError):
+                pass
+        out[row["Date"]] = day
     return out
 
 

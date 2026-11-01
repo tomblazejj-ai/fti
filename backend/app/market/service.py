@@ -1,14 +1,11 @@
-"""Fetch daily market series (all free, keyless FRED CSV) and build the
-technical + correlation + verdict analysis for XAUUSD.
+"""The analysis cycle for XAUUSD (spot gold) and the market overview.
 
-Gold price: PAXG/USD from Kraken's public API (token backed 1:1 by an ounce
-of LBMA gold; see app/connectors/kraken.py) on M15…W1, so levels are in USD.
-Fallback if Kraken is down: FRED `NASDAQQGLDI`. Careful — that is the Credit
-Suisse NASDAQ Gold FLOWS103 *futures* index: it drifted ~7 % from spot over
-2026 (roll cost), so it is only good for direction and % levels, never $.
+Gold price: ONLY XAUUSD's own feeds (app/data/bars.py, app/data/universe.py) — the user's
+broker terminal (MT5) or OANDA when the user connects one, else the NBP daily reference price
+for daily/weekly analysis. PAXG (a token on Kraken) is a separate instrument and is never used
+for XAUUSD (user's spec 2026-11-01); the FRED gold futures index is not used as a fallback either.
 Gold volatility: FRED `GVZCLS` (CBOE Gold ETF Volatility Index).
-Stooq (daily XAUUSD CSV) was rejected: robots.txt disallows all bots and the
-site serves an anti-bot challenge — see docs/DECISIONS.md.
+Stooq (daily XAUUSD CSV) was rejected: robots.txt disallows all bots — see docs/DECISIONS.md.
 """
 
 from __future__ import annotations
@@ -32,7 +29,7 @@ logger = logging.getLogger(__name__)
 GOLD_SERIES = "NASDAQQGLDI"
 GOLD_VOL_SERIES = "GVZCLS"
 SOURCES = {
-    "gold": "Kraken PAXG/USD — token krytý 1 uncí fyzického zlata (sleduje spot XAUUSD, ověřeno 2. 10. 2026: odchylka +0,12 %); záložně FRED NASDAQQGLDI",
+    "gold": "XAUUSD jen z vlastních zdrojů: terminál MT5 nebo OANDA (po připojení), jinak denní referenční cena NBP; PAXG se pro XAUUSD nepoužívá",
     "calendar": "Oficiální kalendáře zveřejnění: BEA (HDP, PCE), BLS (CPI, NFP, PPI, JOLTS), Fed (FOMC)",
     "gold_vol": "FRED GVZCLS — CBOE Gold ETF Volatility Index",
     "drivers": "Dolar (DXY) a EUR/USD z denních kurzů ECB; FRED: DFII10, DGS10, SP500, DCOILWTICO, VIXCLS, CBBTCUSD",
@@ -106,16 +103,47 @@ def _soft(key: str, kind: str, fn, warnings: list[str], label: str):
     failed_at = _failed.get(key)
     if failed_at and time.monotonic() - failed_at < FAIL_RETRY_SECONDS:
         return None
+    from app.data import health, store
+
+    source_key = "src:" + key.split(":")[0]
+    t0 = time.monotonic()
     try:
         value = _slow_cached(key, kind, fn)
     except (FredUnavailableError, CotUnavailableError, worldbank.WorldBankUnavailableError, ecb.EcbUnavailableError,
             nbp.NbpUnavailableError, intl_macro.MacroUnavailableError, ffcal.CalendarFeedUnavailableError,
             kraken.KrakenUnavailableError) as exc:
         _failed[key] = time.monotonic()
+        health.record(source_key, SOURCE_NAMES.get(source_key, label), ok=False, error=f"{label}: {exc}")
+        # The last good answer, shown with its real date — never as if it were current.
+        last, fetched_at = store.cache_get(key)
+        if last is not None and fetched_at is not None:
+            warnings.append(f"{label} nedostupné ({exc}) — používám poslední data stažená {fetched_at:%d. %m. %Y %H:%M} UTC.")
+            STALE_INPUTS[key] = {"label": label, "fetched_at": fetched_at.isoformat(), "error": str(exc)[:300]}
+            return last
         warnings.append(f"{label} nedostupné: {exc}")
         return None
     _failed.pop(key, None)
+    STALE_INPUTS.pop(key, None)
+    health.record(source_key, SOURCE_NAMES.get(source_key, label), ok=True, ms=(time.monotonic() - t0) * 1000,
+                  records=len(value) if hasattr(value, "__len__") else None)
+    if isinstance(value, (dict, list)) and _slow.get(key, (0, None))[0] >= t0:  # freshly fetched, not from memory
+        try:
+            import json
+
+            json.dumps(value)
+            store.cache_put(key, value, label)
+        except (TypeError, ValueError):
+            pass
     return value
+
+
+SOURCE_NAMES = {
+    "src:macro": "FRED (makro řady)", "src:cot": "CFTC COT", "src:ecb": "ECB Data Portal", "src:eurostat": "Eurostat",
+    "src:ons": "ONS (Británie)", "src:mof": "Ministerstvo financí Japonska", "src:eia": "EIA", "src:worldbank": "Světová banka",
+    "src:nbp": "NBP", "src:ffcal": "ForexFactory kalendář", "src:fred": "FRED", "src:bea": "BEA kalendář",
+}
+# inputs currently served from the last good copy because their source failed (key -> info)
+STALE_INPUTS: dict[str, dict] = {}
 
 
 def _series(fred_id: str) -> dict[str, float]:
@@ -131,6 +159,27 @@ def _macro_series(ids: list[str], days: int, warnings: list[str]) -> dict[str, d
         if series:
             out[sid] = series
     return out
+
+
+GOLD_TFS = ("M15", "H1", "H4", "D1", "W1")
+
+
+def gold_bars(now: dt.datetime, warnings: list[str]) -> tuple[dict[str, list], dict[str, dict]]:
+    """XAUUSD candles of every timeframe from XAUUSD's own feeds, plus where each came from.
+    A timeframe without an XAUUSD feed is left out (reported), never filled with PAXG."""
+    from app.data import bars as bars_mod
+
+    candles: dict[str, list] = {}
+    info: dict[str, dict] = {}
+    for tf in GOLD_TFS:
+        bs = bars_mod.get_bars("XAUUSD", tf, now=now)
+        d = bs.describe()
+        info[tf] = {k: d[k] for k in ("provider", "source", "kind", "kind_cs", "proxy", "close_only", "quality", "notes", "bars", "tried")}
+        if bs.ok:
+            candles[tf] = bars_mod.to_candles(bs)
+        else:
+            warnings.append(f"XAUUSD {tf}: " + (bs.notes[0] if bs.notes else "bez dat"))
+    return candles, info
 
 
 def _closes(candles: list) -> list[tuple[str, float]]:
@@ -191,26 +240,18 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
         except CotUnavailableError as exc2:
             warnings.append(f"COT historie nedostupná: {exc2}")
 
-    candles, kraken_errors = kraken.fetch_all()
-    warnings += kraken_errors
+    candles, gold_data = gold_bars(now, warnings)
     multi_tf = mtf.analyze_all(candles) if candles else None
 
-    gold: dict[str, float] = {}
     technical = None
     daily = candles.get("D1", [])
     if len(daily) >= MIN_HISTORY:
-        dates = [c.time.date().isoformat() for c in daily]
-        technical = analyze(dates, [c.close for c in daily], unit="USD")
-    try:
-        gold = _series(GOLD_SERIES)  # correlations stay on the FRED daily series (aligned with the drivers)
-        if technical is None:
-            dates = sorted(gold)
-            technical = analyze(dates, [gold[d] for d in dates])
-            warnings.append("Cena zlata z Krakenu nedostupná — technika spočítána záložně z FRED indexu (úrovně jen v %).")
-    except FredUnavailableError as exc:
-        warnings.append(f"Cena zlata ({GOLD_SERIES}) nedostupná: {exc}")
-    except InsufficientPriceHistory as exc:
-        warnings.append(f"Trend zlata nelze spočítat: {exc}")
+        try:
+            technical = analyze([c.time.date().isoformat() for c in daily], [c.close for c in daily], unit="USD")
+        except InsufficientPriceHistory as exc:
+            warnings.append(f"Trend zlata nelze spočítat: {exc}")
+    else:
+        warnings.append("Technika XAUUSD: málo denních dat XAUUSD — nepočítá se (jiný instrument se nedosazuje).")
 
     ics_events, cal_notes = _slow_cached("bea", "bea", calendar_ics.fetch_all)
     ics_events, cal_notes = list(ics_events), list(cal_notes)
@@ -252,7 +293,7 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
         warnings.append(f"Volatilita zlata ({GOLD_VOL_SERIES}) nedostupná: {exc}")
 
     verdict = build_verdict(fundamental, technical, correlations, gold_vol, next_fomc, cot=cot_result, news=news)
-    season = seasonality.analyze(candles.get("W1", []), now)
+    season = seasonality.analyze(candles.get("W1", []), now, source=(gold_data.get("W1") or {}).get("source") or "XAUUSD")
     dollar, dxy_candles = _dxy_section(candles, now, warnings)
     market = market_status.status(now)
 
@@ -298,7 +339,8 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
     events_all: list[dict] = []
     try:
         events_all = _all_events(calendar, now, warnings)
-        market_view = _markets_section(tra_score, gold_rows, ecb_rates, dollar, news, events_all, season_daily, candles, now, warnings)
+        market_view = _markets_section(tra_score, gold_rows, ecb_rates, dollar, news, events_all, season_daily, candles, now, warnings,
+                                       gold_data)
     except Exception as exc:  # noqa: BLE001 — the overview of other markets must never cost us gold
         logger.exception("Markets overview failed")
         warnings.append(f"Přehled trhů se nepodařilo sestavit: {exc}")
@@ -327,6 +369,7 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
         "season_daily": season_daily or None,
         "markets": market_view,
         "calendar_all": _calendar_payload(events_all, now),
+        "gold_data": gold_data,
     }
     payload["market"] = market
     payload["sources_status"] = sources.build(payload, macro or {}, now, market["open"])
@@ -436,26 +479,35 @@ _fx_cache: dict[str, tuple[float, object]] = {}
 FX_CANDLE_TTL = 900.0
 
 
-def _fx_trend(pair: str, warnings: list[str]) -> tuple[str | None, dict | None]:
-    """Swing trend (D1 + W1) and the last price of a Kraken FX pair, cached 15 minutes."""
+def _fx_trend(code: str, warnings: list[str]) -> tuple[str | None, dict | None]:
+    """Swing trend (D1 + W1) and the current price of one instrument from ITS OWN feeds
+    (app/data/bars.py), cached 15 minutes. The price carries its source and data-quality label."""
     import time
 
-    hit = _fx_cache.get(pair)
+    from app.data import bars as bars_mod
+
+    hit = _fx_cache.get(code)
     if hit and time.monotonic() - hit[0] < FX_CANDLE_TTL:
         return hit[1]  # type: ignore[return-value]
-    try:
-        d1 = dxy.clean_wicks(kraken.fetch_ohlc(kraken.TIMEFRAMES["D1"], pair=pair))
-        w1 = dxy.clean_wicks(kraken.fetch_ohlc(kraken.TIMEFRAMES["W1"], pair=pair))
-    except kraken.KrakenUnavailableError as exc:
-        warnings.append(f"Ceny {pair} z Krakenu nedostupné: {exc}")
+    d1s, w1s = bars_mod.get_bars(code, "D1"), bars_mod.get_bars(code, "W1")
+    if not d1s.ok:
+        warnings.append(f"Ceny {code} nedostupné: {' '.join(d1s.notes)[:300]}")
         return None, None
+    clean = dxy.clean_wicks if d1s.provider == "kraken" else (lambda c: c)
+    d1, w1 = clean(bars_mod.to_candles(d1s)), clean(bars_mod.to_candles(w1s)) if w1s.ok else []
     view = mtf.analyze_all({"D1": d1, "W1": w1}, unit="")
     swing = view.get("swing") or {}
-    last, prev = d1[-1].close, d1[-2].close if len(d1) > 1 else None
-    price = {"value": last, "change_pct": round((last / prev - 1) * 100, 2) if prev else None, "as_of": d1[-1].time.isoformat(),
-             "live": True, "source": "Kraken"}
+    now_bs = bars_mod.get_bars(code, "H1")  # the freshest price this instrument has (broker, or a labelled proxy)
+    cur = now_bs if now_bs.ok else d1s
+    last = cur.bars[-1][4]
+    prev = d1s.bars[-2][4] if len(d1s.bars) > 1 else None
+    if cur is now_bs and d1s.provider != now_bs.provider:
+        prev = None  # never compare prices of two different feeds
+    price = {"value": last, "change_pct": round((last / prev - 1) * 100, 2) if prev else None,
+             "as_of": cur.quality.get("as_of"), "live": cur.quality.get("status") == "LIVE", "source": cur.source,
+             "quality": cur.quality, "proxy": cur.proxy, "kind": cur.kind}
     out = (swing.get("word"), price)
-    _fx_cache[pair] = (time.monotonic(), out)
+    _fx_cache[code] = (time.monotonic(), out)
     return out
 
 
@@ -470,7 +522,8 @@ def _daily_trend(closes: dict[str, float]) -> str | None:
     return {"up": "Nahoru", "down": "Dolů"}.get(t["trend"], "Do strany")
 
 
-def _markets_section(tra_score, gold_rows, ecb_rates, dollar, news, events, season_daily, candles, now, warnings) -> dict:
+def _markets_section(tra_score, gold_rows, ecb_rates, dollar, news, events, season_daily, candles, now, warnings,
+                     gold_data: dict | None = None) -> dict:
     currencies = _currency_data(warnings)
     tff = {cur: _soft(f"cot:tff:{cur}", "cot", lambda m=m: cot.fetch_tff(m), warnings, f"COT {cur}") or []
            for cur, m in cot.TFF_MARKETS.items() if cur != "USD"}
@@ -493,27 +546,18 @@ def _markets_section(tra_score, gold_rows, ecb_rates, dollar, news, events, seas
         seasons["USOIL"] = seasonality.daily_view(wti, now, "gold", "Ropa WTI", source="FRED DCOILWTICO (EIA) od 1986")
 
     prices, trends = {}, {}
-    for code, pair in (("EURUSD", "EURUSD"), ("GBPUSD", "GBPUSD")):
-        trends[code], prices[code] = _fx_trend(pair, warnings)
-    if usdjpy:
-        d = max(usdjpy)
-        days = sorted(usdjpy)
-        prev = usdjpy[days[-2]] if len(days) > 1 else None
-        prices["USDJPY"] = {"value": round(usdjpy[d], 3), "change_pct": round((usdjpy[d] / prev - 1) * 100, 2) if prev else None,
-                            "as_of": d, "live": False, "source": "ECB (denní fixing)"}
-        trends["USDJPY"] = _daily_trend(usdjpy)
-    if wti:
-        d = max(wti)
-        days = sorted(wti)
-        prev = wti[days[-2]] if len(days) > 1 else None
-        prices["USOIL"] = {"value": wti[d], "change_pct": round((wti[d] / prev - 1) * 100, 2) if prev else None, "as_of": d,
-                           "live": False, "source": "FRED / EIA (denní, se zpožděním)"}
-        trends["USOIL"] = _daily_trend(wti)
+    for code in ("EURUSD", "GBPUSD", "USDJPY", "USOIL"):
+        trends[code], prices[code] = _fx_trend(code, warnings)
     gold_d1 = candles.get("D1", [])
     if gold_d1:
         prev = gold_d1[-2].close if len(gold_d1) > 1 else None
-        prices["XAUUSD"] = {"value": gold_d1[-1].close, "change_pct": round((gold_d1[-1].close / prev - 1) * 100, 2) if prev else None,
-                            "as_of": gold_d1[-1].time.isoformat(), "live": True, "source": "Kraken PAXG/USD"}
+        fine = next((tf for tf in ("M15", "H1") if candles.get(tf)), None)
+        info = (gold_data or {}).get(fine or "D1") or {}
+        last = candles[fine][-1].close if fine else gold_d1[-1].close
+        q = info.get("quality") or {}
+        prices["XAUUSD"] = {"value": last, "change_pct": round((last / prev - 1) * 100, 2) if prev else None,
+                            "as_of": q.get("as_of") or gold_d1[-1].time.isoformat(), "live": q.get("status") == "LIVE",
+                            "source": info.get("source") or "XAUUSD", "quality": q}
     swing = (mtf.analyze_all({"D1": gold_d1, "W1": candles.get("W1", [])}, unit="$").get("swing") or {}) if gold_d1 else {}
     trends["XAUUSD"] = swing.get("word")
 

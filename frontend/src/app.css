@@ -1537,6 +1537,128 @@ a.tile:hover .tile-go {
   color: var(--faint);
 }
 
+/* ---------- data quality ---------- */
+
+.qb {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  vertical-align: middle;
+  border: 1px solid transparent;
+}
+.qb-live,
+.qb-near_real_time {
+  color: var(--pos);
+  background: var(--pos-bg);
+}
+.qb-delayed,
+.qb-historical {
+  color: #1d4ed8;
+  background: var(--accent-bg);
+}
+.qb-proxy {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: #fde3b0;
+}
+.qb-stale,
+.qb-unavailable {
+  color: var(--neg);
+  background: var(--neg-bg);
+}
+.cchart-notes {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.dtable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.dtable th,
+.dtable td {
+  text-align: left;
+  vertical-align: top;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.dtable th {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  background: #f8f9fc;
+  position: sticky;
+  top: 0;
+}
+.dtable td small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+.twrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  max-height: 70vh;
+}
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+.form-row input,
+.form-row select {
+  font: inherit;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  min-width: 0;
+  flex: 1 1 220px;
+  background: #fff;
+}
+.btn-primary {
+  border: 0;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-radius: 999px;
+  padding: 7px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.msg-ok {
+  color: var(--pos);
+  font-size: 13.5px;
+}
+.msg-err {
+  color: var(--neg);
+  font-size: 13.5px;
+}
+.src-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: var(--faint);
+}
+.src-ok {
+  background: var(--pos-strong);
+}
+.src-degraded {
+  background: #f59e0b;
+}
+.src-down {
+  background: var(--neg-strong);
+}
+
 /* ---------- phone ---------- */
 
 @media (max-width: 900px) {
@@ -1597,7 +1719,7 @@ a.tile:hover .tile-go {
     bottom: 0;
     z-index: 30;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
     background: rgba(255, 255, 255, 0.9);
     backdrop-filter: saturate(1.6) blur(14px);

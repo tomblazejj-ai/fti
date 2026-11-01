@@ -19,7 +19,7 @@ def _pct(v: float) -> str:
     return f"{v:+.1f} %".replace(".", ",").replace("-", "−")
 
 
-def analyze(weekly: list[Candle], now: dt.datetime) -> dict | None:
+def analyze(weekly: list[Candle], now: dt.datetime, source: str = "XAUUSD") -> dict | None:
     if len(weekly) < 60:
         return None
     month_close: dict[tuple[int, int], float] = {}
@@ -73,7 +73,7 @@ def analyze(weekly: list[Candle], now: dt.datetime) -> dict | None:
         "signal": round(signal, 2),
         "years_from": first_year,
         "years_to": now.year,
-        "note": (f"Z týdenních cen PAXG/USD od {first_year} — jen ~{now.year - first_year} let, statistika je proto orientační. "
+        "note": (f"Z týdenních cen ({source}) od {first_year} — {now.year - first_year} let dat. "
                  "Měsíc = poslední týdenní závěr v měsíci, hranice se proto může o pár dní posunout."),
     }
 

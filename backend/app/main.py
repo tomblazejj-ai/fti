@@ -7,15 +7,30 @@ from fastapi.staticfiles import StaticFiles
 
 from app import scheduler
 from app.api.routes_dashboard import router as dashboard_router
+from app.api.routes_fti import router as fti_router
 from app.api.routes_instruments import router as instruments_router
 from app.db import init_db
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
+def _load_health() -> None:
+    from app.data import health
+    from app.db import SessionLocal
+
+    session = SessionLocal()
+    try:
+        health.load(session)
+    except Exception:  # noqa: BLE001 — monitoring history is optional
+        pass
+    finally:
+        session.close()
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    _load_health()
     scheduler.start()
     yield
     scheduler.shutdown()
@@ -40,6 +55,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(fti_router)
 app.include_router(instruments_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 

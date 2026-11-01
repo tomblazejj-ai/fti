@@ -295,3 +295,35 @@ jen z veřejných webů zdarma.
   ceny); „omezit pohyb“ v systému animace vypne.
 - **Mobil:** service worker bere stránku a data nejdřív ze sítě, takže nová
   verze se ukáže hned při dalším otevření; offline zůstávají poslední data.
+
+## Modul 10 — pravdivá identita instrumentů, datová vrstva, 0 Kč (2026-11-01)
+
+Zadání uživatele: master specifikace FTI, kritická oprava XAUUSD („PAXG není XAUUSD“),
+globální pravidlo pravdivosti všech instrumentů a rozpočet **0 Kč** pro celý projekt.
+
+- **Záměna PAXG → XAUUSD odstraněna.** Konektor Krakenu měl pevně pár PAXGUSD a z něj se
+  počítala cena, graf, trend M15–W1, technika, trendová kategorie skóre, sezónnost, korelace s
+  DXY, headline risk, tickery i export. Navíc se při výpadku dosazoval zlatý futures index FRED.
+  Nyní: XAUUSD bere data jen ze svých zdrojů (`app/data/universe.py`): terminál MT5 brokera nebo
+  OANDA (obojí zdarma, vypnuté do souhlasu uživatele), jinak jen denní referenční cena NBP
+  (označená, jen D1/W1). PAXG je samostatný instrument „PAXG (token)“ s označením proxy.
+- **Registr instrumentů** s pravdivou identitou: typ produktu, jednotka, místo kotace,
+  podklad, expirace. Hotovostní index ≠ CFD (US500 vs US500.CFD), spot WTI ≠ CFD na futures,
+  BTC spot ≠ perpetual futures. U každého zdroje (feedu) se uvádí, co jeho čísla skutečně jsou:
+  EUR/USD z Krakenu = kotace kryptoburzy (PROXY), ECB = denní fixing, NBP = reference.
+- **Jeden vstup pro ceny** `app/data/bars.py`: zdroje v pořadí, nikdy data jiného instrumentu,
+  štítek kvality LIVE / NEAR_REAL_TIME / DELAYED / HISTORICAL / STALE / UNAVAILABLE / PROXY,
+  validace svíček, ukládání historie (`price_bars`), monitoring zdrojů (`source_health`).
+- **FRED:** oficiální API s klíčem (zdarma, volitelně), opakování, a když FRED selže, stejná
+  statistika od oficiálního vydavatele (BLS, US Treasury, CBOE, EIA). Poslední platná data se
+  při výpadku ukážou se skutečným datem a označením (`series_cache`), nikdy jako aktuální.
+- **Nové bezplatné zdroje (ověřeno 1. 11.):** BLS API v1, Treasury (nominální i reálné
+  výnosy), CBOE VIX, EIA denní spot (WTI, Brent, Henry Hub), OECD (CPI, nezaměstnanost, sazby),
+  Bank of Canada Valet, SNB, Kraken Futures (funding, open interest). Zamítnuto: RBA, RBNZ
+  (403), Stooq (robots), LBMA JSON (403).
+- **0 Kč:** žádné placené API, data, AI ani hosting. AI vrstva (`app/ai/provider.py`) zná jen
+  „bez modelu“ (rozbor z výpočtů) a lokální open-source model přes Ollamu (Qwen/Llama 7–8B na
+  RTX 3060 6 GB). Placení poskytovatelé nejsou implementováni.
+- **Stránka Data:** audit všech instrumentů (co FTI skutečně dostává, odkud, jestli to odpovídá,
+  omezení, doporučení), stav zdrojů, připojení MT5/OANDA a klíče (ukládají se jen do
+  `backend/.env`, API je nikdy nevrací). Do veřejného exportu nejde nic z nastavení PC.

@@ -113,12 +113,12 @@ describe("Home", () => {
     expect(screen.getByRole("button", { name: "Zkusit znovu" })).toBeInTheDocument();
   });
 
-  it("has only three sections in the menu", async () => {
+  it("has a short menu with the data page", async () => {
     mock();
     render(<App />);
     await screen.findByRole("heading", { name: "Kam míří trhy" });
     const menu = screen.getByRole("navigation", { name: "Hlavní menu" });
-    expect(within(menu).getAllByRole("link").map((a) => a.textContent?.trim())).toEqual(["Přehled", "Kalendář", "Zprávy"]);
+    expect(within(menu).getAllByRole("link").map((a) => a.textContent?.trim())).toEqual(["Přehled", "Kalendář", "Zprávy", "Data"]);
   });
 });
 

@@ -32,11 +32,96 @@ export type Tf = "M15" | "H1" | "H4" | "D1" | "W1";
 /** [time (s), open, high, low, close, EMA20, EMA50] */
 export type CandleRow = [number, number, number, number, number, number, number];
 
+/** Data-quality label of one value (backend app/data/quality.py). */
+export type QualityStatus = "LIVE" | "NEAR_REAL_TIME" | "DELAYED" | "HISTORICAL" | "STALE" | "UNAVAILABLE" | "PROXY";
+
+export interface DataQuality {
+  status: QualityStatus;
+  label: string;
+  as_of: string | null;
+  age_hours: number | null;
+  text: string;
+}
+
+export interface InstrumentIdentity {
+  code: string;
+  symbol: string;
+  name: string;
+  asset: string;
+  itype: string;
+  itype_cs: string;
+  unit: string;
+  quote_ccy: string;
+  digits: number;
+  proxy: boolean;
+  proxy_note: string | null;
+  underlying: string | null;
+  venue: string | null;
+  expiry: string | null;
+  timezone: string;
+  feeds: string[];
+  cot_market: string | null;
+  cot_note: string | null;
+  notes: string[];
+}
+
 export interface CandlesResponse {
   tf: Tf;
+  code?: string;
   source: string;
+  provider?: string | null;
   candles: CandleRow[];
+  line_only?: boolean;
+  quality?: DataQuality;
+  proxy?: boolean;
+  notes?: string[];
+  kind_cs?: string;
+  volume_note?: string | null;
+  instrument?: InstrumentIdentity | null;
   fetched_at: string;
+}
+
+export interface AuditRow {
+  code: string;
+  symbol: string;
+  name: string;
+  itype_cs: string;
+  gets: string;
+  source: string;
+  verdict: string;
+  status: QualityStatus;
+  limits: string;
+  recommendation: string;
+}
+
+export interface SourceRow {
+  key: string;
+  name: string;
+  status: "ok" | "degraded" | "down" | "unknown";
+  last_ok: string | null;
+  last_error_at: string | null;
+  last_error: string | null;
+  ok_count: number;
+  error_count: number;
+  last_ms: number | null;
+  last_records: number | null;
+  data_as_of: string | null;
+}
+
+export interface Mt5Terminal {
+  name: string;
+  path: string;
+  servers: string[];
+}
+
+export interface SourcesResponse {
+  sources: SourceRow[];
+  stale_inputs: { label: string; fetched_at: string; error: string }[];
+  fred_last_source: Record<string, string>;
+  keys: { name: string; label: string; set: boolean; hint: string | null }[];
+  mt5: { settings: { enabled: boolean; terminal_path: string; symbols: Record<string, string> }; terminals: Mt5Terminal[]; package: boolean };
+  oanda: { settings: { environment: string }; token_set: boolean };
+  legend: Record<string, string>;
 }
 
 export interface MarketComponent {
@@ -82,6 +167,9 @@ export interface MarketPrice {
   as_of: string;
   live: boolean;
   source: string;
+  quality?: DataQuality;
+  proxy?: boolean;
+  kind?: string;
 }
 
 export interface MarketNews {

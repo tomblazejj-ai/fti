@@ -1,6 +1,6 @@
 import datetime as dt
 
-from app.connectors import cot, fred, gdelt, rss_news
+from app.connectors import nbp, cot, fred, gdelt, rss_news
 from app.ingestion import run_ingest
 from app.models import MacroObservation, NewsItem, ScoreHistoryEntry, ScoreSnapshot
 from app.scoring.xauusd import SUPPORTED_HORIZONS
@@ -66,12 +66,26 @@ def _fake_gdelt_queries(client=None, sleep_fn=None):
 
 
 def _patch_all_connectors(monkeypatch):
-    monkeypatch.setattr(fred.settings, "fred_api_key", "dummy-key")
+    monkeypatch.setattr(fred.secrets, "get", lambda name: "dummy-key" if name == "FRED_API_KEY" else "")
     monkeypatch.setattr(fred, "fetch_observations", _fake_fred_observations)
     monkeypatch.setattr(cot, "fetch_latest_two_gold_reports", _fake_cot_reports)
     monkeypatch.setattr(cot, "fetch_gold_history", _fake_cot_history)
     monkeypatch.setattr(rss_news, "fetch_all_feeds", _fake_rss_feeds)
     monkeypatch.setattr(gdelt, "fetch_all_queries", _fake_gdelt_queries)
+    monkeypatch.setattr(nbp, "fetch_gold_usd", _fake_gold_daily)
+
+
+def _fake_gold_daily(now, client=None, sleep_fn=None, cache_file=None):
+    """XAUUSD daily reference prices (the NBP feed of XAUUSD) — 500 business days, rising with waves."""
+    import math
+
+    out, day, i = {}, dt.date(2024, 11, 1), 0
+    while len(out) < 500:
+        if day.weekday() < 5:
+            out[day.isoformat()] = round(2500 + i * 2.5 + 40 * math.sin(i / 9), 2)
+            i += 1
+        day += dt.timedelta(days=1)
+    return out
 
 
 def _fake_cot_history(weeks=160, client=None):
@@ -127,7 +141,7 @@ def test_ingestion_dedupes_same_event_across_sources_and_records_traceable_histo
 
 
 def test_ingestion_is_idempotent_on_second_run_with_unchanged_inputs(monkeypatch, db_session):
-    monkeypatch.setattr(fred.settings, "fred_api_key", "dummy-key")
+    monkeypatch.setattr(fred.secrets, "get", lambda name: "dummy-key" if name == "FRED_API_KEY" else "")
     monkeypatch.setattr(fred, "fetch_observations", _fake_fred_observations)
     monkeypatch.setattr(cot, "fetch_latest_two_gold_reports", _fake_cot_reports)
     monkeypatch.setattr(cot, "fetch_gold_history", _fake_cot_history)

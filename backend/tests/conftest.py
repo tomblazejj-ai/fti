@@ -77,6 +77,30 @@ def _no_portals_or_translation(monkeypatch):
 
     monkeypatch.setattr(ecb, "fetch_history", no_ecb)
 
+    # FTI data layer: no retries, no official fallbacks, no broker feeds, no stored bars in tests
+    from app.connectors import fred, official_alt
+    from app.data import bars, health, secrets, store
+
+    monkeypatch.setattr(fred, "RETRIES", 0)
+    monkeypatch.setattr(fred, "_official_fallback", lambda series_id, history_days: None)
+
+    def no_official(*args, **kwargs):
+        raise official_alt.OfficialUnavailable("v testech se nestahuje")
+
+    for name in ("bls_all", "treasury", "cboe_history", "vix_closes", "eia_daily", "oecd", "boc", "snb_policy_rate", "kraken_perp"):
+        monkeypatch.setattr(official_alt, name, no_official)
+    monkeypatch.setattr(store, "save_bars", lambda *a, **k: 0)
+    monkeypatch.setattr(store, "cache_put", lambda *a, **k: None)
+    monkeypatch.setattr(store, "cache_get", lambda *a, **k: (None, None))
+    bars.clear_cache()
+    health.reset()
+
+    def no_kraken_bars(symbol, tf, inst):
+        raise bars.FeedError("v testech se nestahuje")
+
+    monkeypatch.setattr(bars, "_kraken", no_kraken_bars)
+    monkeypatch.setattr(secrets, "get", lambda name: "")
+
 
 @pytest.fixture()
 def db_session():

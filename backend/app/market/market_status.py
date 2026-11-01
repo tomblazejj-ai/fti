@@ -42,7 +42,8 @@ def status(now: dt.datetime) -> dict:
 
 
 def price_check(paxg: float | None, bullionvault: float | None, xaut: float | None) -> dict:
-    """How far apart the independent gold quotes are (PAXG is what the charts use)."""
+    """How far apart the gold-backed tokens are from the physical market (PAXG and XAUT are
+    separate instruments; this is information about them, not the XAUUSD price)."""
     quotes = {k: v for k, v in (("PAXG (Kraken)", paxg), ("BullionVault (fyzické zlato, Londýn)", bullionvault),
                                  ("XAUT (Kraken)", xaut)) if v}
     if len(quotes) < 2 or not paxg:
@@ -53,6 +54,6 @@ def price_check(paxg: float | None, bullionvault: float | None, xaut: float | No
     ok = worst <= MAX_SOURCE_GAP_PCT
     ref = bullionvault or xaut
     text = (f"Zdroje se shodují (největší rozdíl {worst:.2f} %).".replace(".", ",", 1) if ok else
-            f"Pozor: zdroje se rozcházejí o {worst:.2f} % — cena PAXG teď nemusí přesně odpovídat spotu.".replace(".", ",", 1))
+            f"Pozor: tokeny zlata se od fyzického trhu rozcházejí o {worst:.2f} %.".replace(".", ",", 1))
     return {"quotes": quotes, "gaps_pct": gaps, "max_gap_pct": worst, "ok": ok, "text": text,
             "paxg_vs_physical": round((paxg / ref - 1) * 100, 2) if ref else None}

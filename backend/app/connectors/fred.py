@@ -7,7 +7,11 @@ Two access paths, both free:
      2026-09-28; robots.txt does not disallow it for generic clients and asks
      for `Crawl-delay: 1`, which we respect (CSV_MIN_SECONDS_BETWEEN_REQUESTS).
      No registration, no key.
-  2. Optional: the official JSON API, used only if FRED_API_KEY is set.
+  2. The official JSON API, used whenever FRED_API_KEY is set (backend/.env or the environment;
+     free key after registration at fred.stlouisfed.org — the reliable path).
+Every request is retried; when FRED still fails, the same statistic is taken from its official
+publisher where one is free and keyless (BLS, US Treasury, CBOE, EIA — see official_alt.py) and
+labelled as such in LAST_SOURCE. PCE and GDP have no keyless copy (BEA needs a key).
 
 Attribution requirement (shown in the frontend footer): "Source: FRED®,
 Federal Reserve Bank of St. Louis." All series used here are US-government
@@ -33,7 +37,7 @@ import time
 
 import httpx
 
-from app.config import settings
+from app.data import secrets
 
 FRED_API_URL = "https://api.stlouisfed.org/fred/series/observations"
 FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
@@ -42,6 +46,9 @@ CSV_HISTORY_DAYS = 800  # YoY on a monthly series needs 14+ months; quarterly an
 API_OBSERVATION_LIMIT = 200
 
 _last_csv_request_at: float | None = None
+RETRIES = 2  # a failed request is tried again after 2 s and 5 s
+# series id -> where its last data really came from ("FRED API", "FRED CSV", "BLS (záloha za FRED)", …)
+LAST_SOURCE: dict[str, str] = {}
 
 
 class FredUnavailableError(RuntimeError):
@@ -88,7 +95,7 @@ def _fetch_via_csv(series_id: str, client: httpx.Client, sleep_fn, history_days:
 def _fetch_via_api(series_id: str, client: httpx.Client) -> list[dict]:
     params = {
         "series_id": series_id,
-        "api_key": settings.fred_api_key,
+        "api_key": secrets.get("FRED_API_KEY"),
         "file_type": "json",
         "sort_order": "desc",
         "limit": API_OBSERVATION_LIMIT,
@@ -110,16 +117,55 @@ def fetch_observations(series_id: str, client: httpx.Client | None = None, sleep
     """
     owns_client = client is None
     client = client or httpx.Client(timeout=20.0, follow_redirects=True)
+    use_api = bool(secrets.get("FRED_API_KEY"))
+    error: Exception | None = None
     try:
-        if settings.fred_api_key:
-            observations = _fetch_via_api(series_id, client)
-        else:
-            observations = _fetch_via_csv(series_id, client, sleep_fn, history_days)
-    except httpx.HTTPError as exc:
-        raise FredUnavailableError(f"FRED nedostupný pro {series_id}: {exc}") from exc
-    except ValueError as exc:
-        raise FredUnavailableError(f"FRED vrátil neplatná data pro {series_id}: {exc}") from exc
+        for attempt in range(RETRIES + 1):
+            try:
+                if use_api:
+                    observations = _fetch_via_api(series_id, client)
+                else:
+                    observations = _fetch_via_csv(series_id, client, sleep_fn, history_days)
+                valid = _valid_only(observations)
+                LAST_SOURCE[series_id] = "FRED API" if use_api else "FRED (veřejné CSV)"
+                return valid
+            except (httpx.HTTPError, ValueError, FredUnavailableError) as exc:
+                error = exc
+                if attempt < RETRIES:
+                    sleep_fn(2 + 3 * attempt)
     finally:
         if owns_client:
             client.close()
-    return _valid_only(observations)
+    alt = _official_fallback(series_id, history_days)
+    if alt is not None:
+        return alt
+    raise FredUnavailableError(f"FRED nedostupný pro {series_id}: {error}") from error
+
+
+def _official_fallback(series_id: str, history_days: int) -> list[dict] | None:
+    """The same statistic straight from its official publisher when FRED fails (BLS, Treasury,
+    CBOE, EIA). Returns None when there is no keyless official copy (PCE, GDP: BEA needs a key)."""
+    from app.connectors import official_alt
+
+    try:
+        if series_id in official_alt.BLS_SERIES:
+            data, name = official_alt.bls_all().get(series_id), "BLS (záloha za FRED)"
+        elif series_id in official_alt.TREASURY_SERIES:
+            data, name = official_alt.treasury(series_id, years=max(2, history_days // 365 + 1)), "US Treasury (záloha za FRED)"
+        elif series_id == "VIXCLS":
+            data, name = official_alt.vix_closes(), "CBOE (záloha za FRED)"
+        elif series_id in ("DCOILWTICO", "DCOILBRENTEU", "DHHNGSP"):
+            eia_id = {"DCOILWTICO": "RWTC", "DCOILBRENTEU": "RBRTE", "DHHNGSP": "RNGWHHD"}[series_id]
+            data, name = official_alt.eia_daily(eia_id), "EIA (záloha za FRED)"
+        else:
+            return None
+    except official_alt.OfficialUnavailable:
+        return None
+    if not data:
+        return None
+    start = (dt.date.today() - dt.timedelta(days=history_days)).isoformat()
+    rows = [{"date": d, "value": v} for d, v in sorted(data.items()) if d >= start]
+    if len(rows) < 2:
+        return None
+    LAST_SOURCE[series_id] = name
+    return rows

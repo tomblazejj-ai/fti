@@ -1,8 +1,7 @@
 import { useCallback } from "react";
 import { api } from "../lib/api";
-import type { MarketCard, Quote } from "../lib/types";
+import type { MarketCard } from "../lib/types";
 import { useAsync, useInterval } from "./useAsync";
-import { useTickers } from "./useTickers";
 
 /** The market overview, re-read every 2 minutes (the backend recomputes it every 30). */
 export function useMarkets() {
@@ -12,13 +11,10 @@ export function useMarkets() {
   return data;
 }
 
-const LIVE_SYMBOL: Record<string, string> = { XAUUSD: "PAXGUSD", EURUSD: "EURUSD", GBPUSD: "GBPUSD" };
-
-/** Live price of a market where Kraken has one, else the snapshot price. */
-export function useLivePrice(m: MarketCard): { value: number | null; change: number | null; live: Quote | undefined } {
-  const t = useTickers();
-  const live = LIVE_SYMBOL[m.code] ? t?.live.find((q) => q.symbol === LIVE_SYMBOL[m.code]) : undefined;
-  return { value: live?.price ?? m.price?.value ?? null, change: live?.change_pct ?? m.price?.change_pct ?? null, live };
+/** The market's price exactly as the backend got it from THIS instrument's own feed, with its
+ * data-quality label. No other instrument's quote is ever shown in its place (e.g. PAXG for XAUUSD). */
+export function useLivePrice(m: MarketCard): { value: number | null; change: number | null; live: boolean } {
+  return { value: m.price?.value ?? null, change: m.price?.change_pct ?? null, live: m.price?.quality?.status === "LIVE" };
 }
 
 export const SHORT_NAME: Record<string, string> = {

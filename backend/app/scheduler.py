@@ -32,7 +32,18 @@ def _run_cycle_job() -> None:
     except Exception:  # noqa: BLE001 — a failed cycle must not kill the scheduler
         logger.exception("Scheduled ingestion cycle failed")
     finally:
+        _persist_health(session)
         session.close()
+
+
+def _persist_health(session) -> None:
+    from app.data import health
+
+    try:
+        health.persist(session)
+    except Exception:  # noqa: BLE001 — monitoring must never break the cycle
+        logger.exception("Saving source health failed")
+        session.rollback()
 
 
 def _market_job() -> None:
@@ -40,6 +51,7 @@ def _market_job() -> None:
     try:
         refresh_market(session)
     finally:
+        _persist_health(session)
         session.close()
 
 

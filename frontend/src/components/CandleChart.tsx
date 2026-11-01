@@ -3,6 +3,7 @@ import { useAsync, useInterval } from "../hooks/useAsync";
 import { STATIC, api } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import type { CandleRow, Tf } from "../lib/types";
+import { QualityBadge } from "./Bits";
 import { Pills } from "./ui";
 
 const TFS: Tf[] = ["M15", "H1", "H4", "D1", "W1"];
@@ -140,7 +141,7 @@ export function CandleChart({
                 <text key={r[0]} x={x(i)} y={H - 8} className="cc-tick" textAnchor="middle">{timeLabel(r[0], tf)}</text>
               ) : null,
             )}
-            {kind === "line" ? (
+            {kind === "line" || data.data?.line_only ? (
               <g key={`${tf}-line`} className="cc-draw">
                 <path d={`${linePath(4)}L${x(rows.length - 1)},${PAD.top + plotH}L${x(0)},${PAD.top + plotH}Z`} fill={`url(#area-${code})`} className="cc-area" />
                 <path d={linePath(4)} className="cc-line" pathLength={1} />
@@ -186,8 +187,17 @@ export function CandleChart({
         )}
       </div>
       <p className="cchart-foot">
-        {data.data?.source} · obnova každou minutu{data.data && ` · staženo ${relativeTime(data.data.fetched_at)}`}
+        <QualityBadge q={data.data?.quality} source={data.data?.source} /> {data.data?.source}
+        {data.data?.kind_cs && ` · ${data.data.kind_cs}`}
+        {data.data && ` · staženo ${relativeTime(data.data.fetched_at)}`}
       </p>
+      {data.data?.notes && data.data.notes.length > 0 && (
+        <ul className="cchart-notes">
+          {[...new Set(data.data.notes)].map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

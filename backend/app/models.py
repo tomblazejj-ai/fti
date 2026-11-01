@@ -178,3 +178,184 @@ class TraScorePoint(Base):
     total: Mapped[int] = mapped_column()
     components: Mapped[dict] = mapped_column(JSON, default=dict)  # {category key: score}
     source: Mapped[str] = mapped_column(String(10), default="live")
+
+
+# --- FTI platform tables (2026-11-01). New tables only, so existing databases just gain them. ---
+
+
+class SeriesCache(Base):
+    """Last good answer of every external source (JSON). When the source fails, the app shows
+    this copy with its real date and a STALE/DELAYED label instead of silently going blank."""
+
+    __tablename__ = "series_cache"
+
+    key: Mapped[str] = mapped_column(String(120), primary_key=True)
+    fetched_at: Mapped[dt.datetime] = mapped_column(UtcDateTime(), default=utcnow)
+    source: Mapped[str] = mapped_column(String(80), default="")
+    payload: Mapped[dict] = mapped_column(JSON)
+
+
+class SourceHealth(Base):
+    """Monitoring of one data source: last attempt, last success, error, response time, records."""
+
+    __tablename__ = "source_health"
+
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), default="")
+    last_attempt: Mapped[dt.datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    last_ok: Mapped[dt.datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    last_error_at: Mapped[dt.datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ok_count: Mapped[int] = mapped_column(default=0)
+    error_count: Mapped[int] = mapped_column(default=0)
+    last_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_records: Mapped[int | None] = mapped_column(nullable=True)
+    data_as_of: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class PriceBar(Base):
+    """OHLCV history per instrument and timeframe, kept so the history grows beyond what a
+    source returns at once (Kraken: 720 candles). Needed for backtests and correlations."""
+
+    __tablename__ = "price_bars"
+    __table_args__ = (UniqueConstraint("code", "tf", "t", name="uq_price_bar"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), index=True)
+    tf: Mapped[str] = mapped_column(String(4), index=True)
+    t: Mapped[int] = mapped_column(index=True)  # bar open, unix seconds UTC
+    o: Mapped[float] = mapped_column(Float)
+    h: Mapped[float] = mapped_column(Float)
+    l: Mapped[float] = mapped_column(Float)  # noqa: E741 (OHLC naming)
+    c: Mapped[float] = mapped_column(Float)
+    v: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(40), default="")
+
+
+class MarketScoreRecord(Base):
+    """Unified -100..+100 score of every instrument, stored each cycle (archive, score history)."""
+
+    __tablename__ = "market_scores"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), index=True)
+    computed_at: Mapped[dt.datetime] = mapped_column(UtcDateTime(), default=utcnow, index=True)
+    overall: Mapped[float | None] = mapped_column(Float, nullable=True)
+    intraday: Mapped[float | None] = mapped_column(Float, nullable=True)
+    swing: Mapped[float | None] = mapped_column(Float, nullable=True)
+    technical: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fundamental: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    label: Mapped[str] = mapped_column(String(20), default="")
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class AnalysisRecord(Base):
+    """One analysis (AI advisor, zone analysis, briefing). Never overwritten: an update is a new
+    row whose parent_id points at the previous version."""
+
+    __tablename__ = "analyses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("analyses.id"), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(20), index=True)  # advisor | zone | briefing
+    code: Mapped[str | None] = mapped_column(String(16), index=True, nullable=True)
+    tf: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    zone_id: Mapped[int | None] = mapped_column(nullable=True, index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(UtcDateTime(), default=utcnow, index=True)
+    data_as_of: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    preferred: Mapped[str | None] = mapped_column(String(12), nullable=True)  # LONG | SHORT | NO TRADE
+    confidence: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    ai_model: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    question: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class UserZone(Base):
+    """A price zone the user drew on the chart. Private: never exported to the public site."""
+
+    __tablename__ = "user_zones"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), index=True)
+    tf: Mapped[str] = mapped_column(String(4))
+    lo: Mapped[float] = mapped_column(Float)
+    hi: Mapped[float] = mapped_column(Float)
+    kind: Mapped[str] = mapped_column(String(20), default="custom")
+    direction: Mapped[str | None] = mapped_column(String(8), nullable=True)  # long | short | None
+    name: Mapped[str] = mapped_column(String(120), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(UtcDateTime(), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(UtcDateTime(), default=utcnow)
+    t_from: Mapped[int | None] = mapped_column(nullable=True)  # where the rectangle starts on the chart
+    state: Mapped[str] = mapped_column(String(16), default="active")  # active | archived
+    status: Mapped[dict] = mapped_column(JSON, default=dict)  # last monitoring result
+
+
+class ZoneEvent(Base):
+    __tablename__ = "zone_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    zone_id: Mapped[int] = mapped_column(index=True)
+    at: Mapped[dt.datetime] = mapped_column(UtcDateTime(), default=utcnow)
+    event: Mapped[str] = mapped_column(String(20))
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    text: Mapped[str] = mapped_column(Text, default="")
+
+
+class WatchItem(Base):
+    """A watchlist entry or an alert rule (kind decides which)."""
+
+    __tablename__ = "watch_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20))  # instrument | price | zone | bos | fvg | trend | scenario | event | volatility
+    code: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    tf: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(UtcDateTime(), default=utcnow)
+    state: Mapped[dict] = mapped_column(JSON, default=dict)  # last seen values, so a rule fires once per change
+
+
+class AlertRecord(Base):
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    rule_id: Mapped[int | None] = mapped_column(nullable=True, index=True)
+    at: Mapped[dt.datetime] = mapped_column(UtcDateTime(), default=utcnow, index=True)
+    code: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    title: Mapped[str] = mapped_column(String(200))
+    reason: Mapped[str] = mapped_column(Text, default="")
+    read: Mapped[bool] = mapped_column(default=False)
+
+
+class AiUsage(Base):
+    """Every AI call: tokens and cost, for the monthly budget and the cost overview."""
+
+    __tablename__ = "ai_usage"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[dt.datetime] = mapped_column(UtcDateTime(), default=utcnow, index=True)
+    task: Mapped[str] = mapped_column(String(40))
+    provider: Mapped[str] = mapped_column(String(20))
+    model: Mapped[str] = mapped_column(String(60))
+    input_tokens: Mapped[int] = mapped_column(default=0)
+    output_tokens: Mapped[int] = mapped_column(default=0)
+    cache_read_tokens: Mapped[int] = mapped_column(default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    ok: Mapped[bool] = mapped_column(default=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+
+
+class BacktestRecord(Base):
+    __tablename__ = "backtests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[dt.datetime] = mapped_column(UtcDateTime(), default=utcnow)
+    strategy: Mapped[str] = mapped_column(String(60))
+    code: Mapped[str] = mapped_column(String(16))
+    tf: Mapped[str] = mapped_column(String(4))
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
+    result: Mapped[dict] = mapped_column(JSON, default=dict)

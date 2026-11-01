@@ -316,7 +316,7 @@ def get_tickers(session: Session = Depends(get_session)):
     market = market_status.status(now)
     paxg = next((q["price"] for q in live if q["symbol"] == "PAXGUSD"), None)
     check = _cached("price_check", 60.0, lambda: _price_check(paxg))
-    weekend = _weekend_gap(paxg) if not market["open"] else None
+    weekend = None  # the old "weekend gap" read PAXG as if it were spot gold — removed (user's spec 2026-11-01)
     return {"live": live, "daily": daily, "error": error, "fetched_at": now, "market": market,
             "price_check": check, "weekend": weekend}
 
@@ -379,38 +379,63 @@ def _live_dxy() -> dict | None:
 
 @router.get("/instruments/{code}/candles")
 def get_candles(code: str, tf: str = "H1"):
-    from app.connectors import ecb, kraken
-    from app.market import dxy, mtf
+    """OHLC bars of ONE instrument from its own feeds (app/data/bars.py) with provenance and the
+    data-quality label. XAUUSD never gets PAXG data: without an XAUUSD feed it is unavailable."""
+    from app.data import bars as bars_mod, universe
 
-    code = code.upper()
-    if code not in ("XAUUSD", "DXY", "EURUSD", "GBPUSD", "USDJPY", "USOIL"):
-        raise HTTPException(status_code=404, detail="Svíčky pro tento trh nejsou.")
-    tf = tf.upper()
-    if tf not in kraken.TIMEFRAMES:
+    code, tf = code.upper(), tf.upper()
+    if code == "DXY":
+        return _dxy_candles(tf)
+    if universe.get(code) is None:
+        raise HTTPException(status_code=404, detail="Tento instrument FTI nezná.")
+    if tf not in universe.TF_MINUTES:
         raise HTTPException(status_code=400, detail=f"Neznámý timeframe {tf}.")
-    if code in ("USDJPY", "USOIL"):
-        return _daily_line(code, tf)
+    bs = bars_mod.get_bars(code, tf)
+    info = bs.describe()
+    if not bs.ok:
+        raise HTTPException(status_code=503, detail=" ".join(bs.notes) or "Data nejsou k dispozici.")
+    rows = _chart_rows(bs.bars[-600:])
+    return {"tf": tf, "code": code, "source": bs.source, "provider": bs.provider, "candles": rows, "line_only": bs.close_only,
+            "quality": bs.quality, "proxy": bs.proxy, "notes": bs.notes, "instrument": info["instrument"], "kind": bs.kind,
+            "kind_cs": info["kind_cs"], "volume_note": bs.meta.get("volume"), "fetched_at": dt.datetime.now(dt.timezone.utc)}
+
+
+def _chart_rows(bars: list) -> list[list]:
+    """[t, o, h, l, c, ema20, ema50] for the chart."""
+    from app.analysis import indicators
+
+    closes = [b[4] for b in bars]
+    e20, e50 = indicators.ema(closes, 20), indicators.ema(closes, 50)
+    return [[int(b[0]), b[1], b[2], b[3], b[4], round(e20[i], 6) if e20[i] is not None else None,
+             round(e50[i], 6) if e50[i] is not None else None] for i, b in enumerate(bars)]
+
+
+def _dxy_candles(tf: str):
+    """The dollar index rebuilt from its ICE formula: Kraken FX quotes + ECB fixings (JPY, SEK)."""
+    from app.connectors import ecb, kraken
+    from app.market import dxy
+    from app.data import quality
+
+    if tf not in kraken.TIMEFRAMES:
+        raise HTTPException(status_code=400, detail=f"DXY je jen pro {', '.join(kraken.TIMEFRAMES)}.")
+
+    def build():
+        out, errors = dxy.fetch_candles(_fixings(), {tf: kraken.TIMEFRAMES[tf]}, sleep_fn=lambda s: None)
+        if tf not in out:
+            raise kraken.KrakenUnavailableError("; ".join(errors) or "žádné svíčky")
+        return out[tf]
+
     try:
-        if code in ("EURUSD", "GBPUSD"):
-            candles = _cached(f"{code}:{tf}", CANDLE_TTL, lambda: dxy.clean_wicks(kraken.fetch_ohlc(kraken.TIMEFRAMES[tf], pair=code)))
-        elif code == "XAUUSD":
-            candles = _cached(f"candles:{tf}", CANDLE_TTL, lambda: kraken.fetch_ohlc(kraken.TIMEFRAMES[tf]))
-        else:
-            def build():
-                out, errors = dxy.fetch_candles(_fixings(), {tf: kraken.TIMEFRAMES[tf]}, sleep_fn=lambda s: None)
-                if tf not in out:
-                    raise kraken.KrakenUnavailableError("; ".join(errors) or "žádné svíčky")
-                return out[tf]
-            candles = _cached(f"dxy:{tf}", CANDLE_TTL, build)
+        candles = _cached(f"dxy:{tf}", CANDLE_TTL, build)
     except (kraken.KrakenUnavailableError, ecb.EcbUnavailableError) as exc:
-        raise HTTPException(status_code=503, detail=f"Ceny se teď nepodařilo stáhnout: {exc}") from exc
-    res = mtf.analyze_tf(tf, candles)
-    if res is None:
-        raise HTTPException(status_code=503, detail="Málo svíček pro výpočet.")
-    source = {"XAUUSD": "Kraken PAXG/USD", "EURUSD": "Kraken EUR/USD", "GBPUSD": "Kraken GBP/USD"}.get(
-        code, "DXY přepočet: Kraken (EUR, GBP, CAD, CHF) + ECB (JPY, SEK)")
-    return {"tf": tf, "source": source, "candles": res["candles"], "trend": {k: v for k, v in res.items() if k != "candles"},
-            "fetched_at": dt.datetime.now(dt.timezone.utc)}
+        raise HTTPException(status_code=503, detail=f"DXY se teď nepodařilo spočítat: {exc}") from exc
+    bars = [(int(c.time.timestamp()), c.open, c.high, c.low, c.close, None) for c in candles]
+    now = dt.datetime.now(dt.timezone.utc)
+    return {"tf": tf, "code": "DXY", "source": "DXY přepočet podle vzorce ICE: Kraken (EUR, GBP, CAD, CHF) + ECB (JPY, SEK)",
+            "provider": "calc", "candles": _chart_rows(bars), "line_only": False,
+            "quality": quality.classify(candles[-1].time if candles else None, now, "intraday", proxy=True), "proxy": True,
+            "notes": ["Přepočet indexu z kotací měn, ne kotace futures DXY na ICE."], "instrument": None,
+            "kind": "calculated", "kind_cs": "vypočtený index", "volume_note": None, "fetched_at": now}
 
 
 TRA_CODES = {"XAUUSD": "XAUUSD", "DXY": "USD", "USD": "USD"}
@@ -444,41 +469,6 @@ def get_tra_history(code: str, days: int = 365, session: Session = Depends(get_s
                          "body „živě“ ukládá aplikace průběžně.",
     }
 
-
-
-def _daily_line(code: str, tf: str):
-    """USD/JPY (ECB daily fixing) and WTI (FRED daily): closing prices only, drawn as a line."""
-    from app.connectors import ecb, fred, kraken
-    from app.market import mtf
-
-    if tf not in ("D1", "W1"):
-        raise HTTPException(status_code=400, detail="Pro tento trh jsou jen denní a týdenní data (D1, W1).")
-
-    def series():
-        if code == "USDJPY":
-            rates = ecb.fetch_history(dt.datetime.now(dt.timezone.utc))
-            return {d: r["JPY"] / r["USD"] for d, r in rates.items() if r.get("USD") and r.get("JPY")}
-        return {o["date"]: o["value"] for o in fred.fetch_observations("DCOILWTICO", history_days=1500)}
-
-    try:
-        closes = _cached(f"line:{code}", 3600.0, series)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=503, detail=f"Data se teď nepodařilo stáhnout: {exc}") from exc
-    days = sorted(closes)
-    if tf == "W1":
-        weeks: dict[str, str] = {}
-        for d in days:
-            day = dt.date.fromisoformat(d)
-            weeks[(day - dt.timedelta(days=day.weekday())).isoformat()] = d
-        days = [weeks[w] for w in sorted(weeks)]
-    candles = [kraken.Candle(dt.datetime.fromisoformat(d).replace(tzinfo=dt.timezone.utc), closes[d], closes[d], closes[d], closes[d])
-               for d in days]
-    res = mtf.analyze_tf(tf, candles)
-    if res is None:
-        raise HTTPException(status_code=503, detail="Málo dat pro graf.")
-    source = "ECB denní fixing (USD/JPY)" if code == "USDJPY" else "FRED / EIA — denní cena ropy WTI (se zpožděním)"
-    return {"tf": tf, "source": source, "candles": res["candles"], "line_only": True,
-            "trend": {k: v for k, v in res.items() if k != "candles"}, "fetched_at": dt.datetime.now(dt.timezone.utc)}
 
 
 def _latest_payload(session: Session) -> dict:

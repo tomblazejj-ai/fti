@@ -9,7 +9,7 @@ import { useNow } from "../hooks/useNow";
 import { formatDateTime, shortDate } from "../lib/format";
 import type { MarketArgument, MarketCard } from "../lib/types";
 
-const LINE_ONLY = new Set(["USDJPY", "USOIL"]);
+const LINE_ONLY = new Set(["USOIL"]);
 
 /** One market: score and its reasons first, then what can move it, public technical outlooks, chart, details. */
 export function MarketDetail({ code }: { code: string }) {

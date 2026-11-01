@@ -3,6 +3,7 @@ import { BrandMark, Icon, type IconName } from "./components/Icon";
 import { TickerBar } from "./components/TickerBar";
 import { STATIC } from "./lib/api";
 import { CalendarPage } from "./pages/CalendarPage";
+import { DataPage } from "./pages/DataPage";
 import { Home } from "./pages/Home";
 import { MarketDetail } from "./pages/MarketDetail";
 import { NewsPage } from "./pages/NewsPage";
@@ -28,6 +29,7 @@ const NAV: { href: string; label: string; icon: IconName; match: (h: string) => 
   { href: "#/", label: "Přehled", icon: "home", match: isHome },
   { href: "#/kalendar", label: "Kalendář", icon: "calendar", match: (h) => h.startsWith("#/kalendar") },
   { href: "#/zpravy", label: "Zprávy", icon: "news", match: (h) => h.startsWith("#/zpravy") },
+  { href: "#/data", label: "Data", icon: "layers", match: (h) => h.startsWith("#/data") },
 ];
 
 function Page({ hash }: { hash: string }) {
@@ -35,6 +37,7 @@ function Page({ hash }: { hash: string }) {
   if (market) return <MarketDetail key={market[1]} code={market[1].toUpperCase()} />;
   if (hash.startsWith("#/kalendar")) return <CalendarPage />;
   if (hash.startsWith("#/zpravy")) return <NewsPage />;
+  if (hash.startsWith("#/data")) return <DataPage />;
   return <Home />;
 }
 
@@ -58,7 +61,7 @@ export function App() {
         </nav>
       </header>
       <TickerBar />
-      <div key={hash.replace(/^#\/(trh\/\w+|kalendar|zpravy).*$/, "$1")} className="page-enter">
+      <div key={hash.replace(/^#\/(trh\/\w+|kalendar|zpravy|data).*$/, "$1")} className="page-enter">
         <Page hash={hash} />
       </div>
       <nav className="tabbar" aria-label="Menu">

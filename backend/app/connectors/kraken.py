@@ -113,7 +113,7 @@ TICKER_URL = "https://api.kraken.com/0/public/Ticker"
 # Kraken pair -> (key in the answer, label, decimals). Live quotes for the ticker strip.
 # USD/JPY left out: Kraken's yen book is thin (showed +2,65 % "since open" on 2026-10-02).
 TICKERS = {
-    "PAXGUSD": ("PAXGUSD", "Zlato", 2),
+    "PAXGUSD": ("PAXGUSD", "PAXG (token)", 2),
     "EURUSD": ("ZEURZUSD", "EUR/USD", 5),
     "GBPUSD": ("ZGBPZUSD", "GBP/USD", 5),
 }

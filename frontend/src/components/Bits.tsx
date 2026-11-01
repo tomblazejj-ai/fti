@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useLivePrice } from "../hooks/useMarkets";
 import { countdown, pct, price, relativeTime } from "../lib/format";
-import type { MarketCard, MarketNews, NextEvent, WatchItem } from "../lib/types";
+import type { DataQuality, MarketCard, MarketNews, NextEvent, QualityStatus, WatchItem } from "../lib/types";
 import { Icon } from "./Icon";
 import { tone } from "./Visual";
 
@@ -21,14 +21,36 @@ export function BiasChip({ m }: { m: MarketCard }) {
   );
 }
 
-/** Price of a market, live where Kraken has it; flashes when it moves. */
+const Q_LABEL: Record<QualityStatus, string> = {
+  LIVE: "živě",
+  NEAR_REAL_TIME: "téměř živě",
+  DELAYED: "se zpožděním",
+  HISTORICAL: "historická",
+  STALE: "zastaralé",
+  UNAVAILABLE: "nedostupné",
+  PROXY: "proxy",
+};
+
+/** Data-quality chip: what kind of data this is and how fresh — text, not only colour. */
+export function QualityBadge({ q, source }: { q?: DataQuality | null; source?: string }) {
+  if (!q) return null;
+  const when = q.as_of ? ` · data k ${new Date(q.as_of).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}` : "";
+  return (
+    <span className={`qb qb-${q.status.toLowerCase()}`} title={`${source ? source + " — " : ""}${q.text}${when}`}>
+      {Q_LABEL[q.status] ?? q.label}
+    </span>
+  );
+}
+
+/** Price of a market from its own feed, with its quality label; flashes when it moves. */
 export function LivePrice({ m, big = false }: { m: MarketCard; big?: boolean }) {
   const p = useLivePrice(m);
   return (
-    <span className={`lprice${big ? " is-big" : ""}`}>
+    <span className={`lprice${big ? " is-big" : ""}`} title={m.price?.source}>
       <span key={p.value ?? "na"} className="lprice-v flash">{price(p.value, m.digits)}</span>
       {p.change !== null && <span className={`lprice-ch ${tone(p.change)}`}>{pct(p.change)}</span>}
       {p.live && <span className="live-dot" title="živá cena" aria-label="živá cena" />}
+      {big && <QualityBadge q={m.price?.quality} source={m.price?.source} />}
     </span>
   );
 }

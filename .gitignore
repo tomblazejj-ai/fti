@@ -11,3 +11,5 @@ frontend/dist/
 frontend/*.tsbuildinfo
 backend/fti.log
 backend/cache/
+backend/backups/
+backend/fti_settings.json
