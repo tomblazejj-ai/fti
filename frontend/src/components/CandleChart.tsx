@@ -3,7 +3,7 @@ import { useAsync, useInterval } from "../hooks/useAsync";
 import { STATIC, api } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import type { CandleRow, Tf } from "../lib/types";
-import { QualityBadge } from "./Bits";
+import { MarketChip, QualityBadge } from "./Bits";
 import { Pills } from "./ui";
 
 const TFS: Tf[] = ["M15", "H1", "H4", "D1", "W1"];
@@ -187,7 +187,8 @@ export function CandleChart({
         )}
       </div>
       <p className="cchart-foot">
-        <QualityBadge q={data.data?.quality} source={data.data?.source} /> {data.data?.source}
+        <MarketChip m={data.data?.market} /> <QualityBadge q={data.data?.quality} source={data.data?.source} /> {data.data?.source}
+        {data.data?.last_quote && !data.data.last_quote.tradable_now && ` · poslední kotace ${data.data.last_quote.time_cs}`}
         {data.data?.kind_cs && ` · ${data.data.kind_cs}`}
         {data.data && ` · staženo ${relativeTime(data.data.fetched_at)}`}
       </p>

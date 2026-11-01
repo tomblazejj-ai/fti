@@ -1,5 +1,6 @@
 import { useTickers } from "../hooks/useTickers";
 import { pct, price, shortDate } from "../lib/format";
+import { MarketChip } from "./Bits";
 
 // FX and spot gold stop with the spot market; the token price runs on over the weekend.
 const FOLLOWS_SPOT = new Set(["PAXGUSD", "DXY", "EURUSD", "GBPUSD"]);
@@ -19,20 +20,28 @@ export function TickerBar() {
         {quotes.map((q) => {
           const ch = q.change_pct;
           const weekend = closed && q.live && FOLLOWS_SPOT.has(q.symbol);
+          const closedNow = q.market ? q.market.state !== "OPEN" : weekend;
           return (
             <span
               key={q.symbol}
               className={`tick${q.live ? "" : " is-daily"}`}
-              title={!q.live ? `${q.source}, denní závěr k ${shortDate(q.as_of)}` : weekend ? `${q.source} — spotový trh je zavřený` : `${q.source}, živě`}
+              title={`${q.source}${q.kind_cs ? ` · ${q.kind_cs}` : ""}${q.quote_time_cs ? ` · ${q.quote_time_cs}` : q.as_of ? ` · k ${shortDate(q.as_of)}` : ""}`}
             >
               <span className="tick-name">{q.label}</span>
               <span key={q.price} className="tick-price flash">{price(q.price, q.digits)}</span>
-              {ch !== null && !weekend && <span className={`tick-ch ${ch > 0 ? "pos" : ch < 0 ? "neg" : ""}`}>{pct(ch)}</span>}
-              {weekend && <span className="tick-d">víkend</span>}
-              {!q.live && <span className="tick-d">denní</span>}
+              {ch !== null && !closedNow && <span className={`tick-ch ${ch > 0 ? "pos" : ch < 0 ? "neg" : ""}`}>{pct(ch)}</span>}
+              {closedNow && <MarketChip m={q.market} />}
+              {q.proxy && <span className="tick-d" title={q.kind_cs}>proxy</span>}
+              {!q.live && !closedNow && <span className="tick-d">{q.quote_time_cs ?? "denní"}</span>}
             </span>
           );
         })}
+        {(t?.unavailable ?? []).map((u) => (
+          <span key={u.symbol} className="tick is-daily" title={u.reason}>
+            <span className="tick-name">{u.label}</span>
+            <span className="tick-d">bez zdroje</span>
+          </span>
+        ))}
       </div>
     </div>
   );

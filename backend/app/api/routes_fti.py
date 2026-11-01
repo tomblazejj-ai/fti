@@ -38,7 +38,8 @@ def _availability(inst: universe.Instrument) -> dict:
     for tf in ("H1", "D1"):
         bs = bars_mod.get_bars(inst.code, tf)
         d = bs.describe()
-        out[tf] = {k: d[k] for k in ("provider", "source", "kind", "kind_cs", "proxy", "close_only", "quality", "notes", "tried", "bars")}
+        out[tf] = {k: d[k] for k in ("provider", "source", "kind", "kind_cs", "proxy", "close_only", "quality", "notes", "tried", "bars",
+                                     "market", "last_quote")}
     return out
 
 
@@ -82,6 +83,8 @@ def _audit_row(inst: universe.Instrument) -> dict:
         "code": inst.code, "symbol": inst.symbol, "name": inst.name, "itype_cs": universe.ITYPE_CS.get(inst.itype, inst.itype),
         "gets": gets, "source": best.get("source") or "—", "verdict": verdict,
         "status": (best.get("quality") or {}).get("status") or quality.UNAVAILABLE,
+        "market": (best.get("market") or (h1.get("market") or d1.get("market")) or {}),
+        "last_quote": best.get("last_quote") or {},
         "limits": "; ".join(dict.fromkeys((best.get("notes") or []) + list(inst.notes)))[:600] or "—",
         "recommendation": recommendation,
     }
@@ -178,6 +181,21 @@ def update_settings(body: SettingsIn):
     with _audit_lock:
         _audit_cache.clear()
     return out
+
+
+@router.post("/data/test")
+def data_test():
+    """A real availability test of every source: one request each, content and freshness checked."""
+    from app.data import probes
+
+    if _test_lock.locked():
+        raise HTTPException(status_code=409, detail="Test už běží.")
+    with _test_lock:
+        rows = probes.run_all()
+    return {"tested_at": dt.datetime.now(dt.timezone.utc), "rows": rows}
+
+
+_test_lock = threading.Lock()
 
 
 @router.get("/ai/status")

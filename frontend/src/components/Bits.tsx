@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useLivePrice } from "../hooks/useMarkets";
 import { countdown, pct, price, relativeTime } from "../lib/format";
-import type { DataQuality, MarketCard, MarketNews, NextEvent, QualityStatus, WatchItem } from "../lib/types";
+import type { DataQuality, LastQuote, MarketCard, MarketNews, MarketStateInfo, NextEvent, QualityStatus, WatchItem } from "../lib/types";
 import { Icon } from "./Icon";
 import { tone } from "./Visual";
 
@@ -42,15 +42,50 @@ export function QualityBadge({ q, source }: { q?: DataQuality | null; source?: s
   );
 }
 
+const M_LABEL: Record<MarketStateInfo["state"], string> = {
+  OPEN: "otevřeno",
+  CLOSED: "zavřeno",
+  PRE_MARKET: "předobchod",
+  POST_MARKET: "poobchod",
+  TRADING_BREAK: "přestávka",
+  HOLIDAY: "svátek",
+  UNKNOWN: "stav neověřen",
+};
+
+/** Market state chip: is the market trading now (text, not only colour). */
+export function MarketChip({ m }: { m?: MarketStateInfo | null }) {
+  if (!m || !m.state) return null;
+  return (
+    <span className={`mk mk-${m.state.toLowerCase()}`} title={m.reason}>
+      {M_LABEL[m.state] ?? m.label}
+    </span>
+  );
+}
+
+/** "Poslední kotace pá 30. 10. 2026 23:00 SEČ" when the price is not a live tradable quote. */
+export function LastQuoteLine({ q }: { q?: LastQuote | null }) {
+  if (!q || q.tradable_now) return null;
+  return <span className="lq">poslední kotace {q.time_cs}</span>;
+}
+
 /** Price of a market from its own feed, with its quality label; flashes when it moves. */
 export function LivePrice({ m, big = false }: { m: MarketCard; big?: boolean }) {
   const p = useLivePrice(m);
+  if (p.value === null) {
+    return <span className={`lprice${big ? " is-big" : ""}`}><span className="lprice-na">cena nedostupná</span></span>;
+  }
   return (
     <span className={`lprice${big ? " is-big" : ""}`} title={m.price?.source}>
       <span key={p.value ?? "na"} className="lprice-v flash">{price(p.value, m.digits)}</span>
       {p.change !== null && <span className={`lprice-ch ${tone(p.change)}`}>{pct(p.change)}</span>}
       {p.live && <span className="live-dot" title="živá cena" aria-label="živá cena" />}
-      {big && <QualityBadge q={m.price?.quality} source={m.price?.source} />}
+      {!big && m.price?.market && m.price.market.state !== "OPEN" && <MarketChip m={m.price.market} />}
+      {big && (
+        <span className="lprice-meta">
+          <MarketChip m={m.price?.market} /> <QualityBadge q={m.price?.quality} source={m.price?.source} />{" "}
+          <LastQuoteLine q={m.price?.last_quote} />
+        </span>
+      )}
     </span>
   );
 }

@@ -174,7 +174,8 @@ def gold_bars(now: dt.datetime, warnings: list[str]) -> tuple[dict[str, list], d
     for tf in GOLD_TFS:
         bs = bars_mod.get_bars("XAUUSD", tf, now=now)
         d = bs.describe()
-        info[tf] = {k: d[k] for k in ("provider", "source", "kind", "kind_cs", "proxy", "close_only", "quality", "notes", "bars", "tried")}
+        info[tf] = {k: d[k] for k in ("provider", "source", "kind", "kind_cs", "proxy", "close_only", "quality", "notes", "bars", "tried",
+                                      "market", "last_quote")}
         if bs.ok:
             candles[tf] = bars_mod.to_candles(bs)
         else:
@@ -328,7 +329,10 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
         gold_daily = _soft("nbp:gold", "worldbank", lambda: nbp.fetch_gold_usd(now), warnings, "Denní cena zlata (NBP)")
         if gold_daily:
             season_daily["gold"] = seasonality.daily_view(
-                gold_daily, now, "gold", "Zlato", source="Narodowy Bank Polski — denní cena zlata od 2013 (přepočet na USD kurzem NBP)")
+                gold_daily, now, "gold", "Zlato — referenční řada NBP",
+                source="Referenční řada NBP: cena 1 g zlata v PLN přepočtená kurzem USD/PLN na USD/oz, od 2013. "
+                       "Není to kotace XAUUSD — ověřeno, že odpovídá závěru předchozího obchodního dne s mediánovou "
+                       "odchylkou ~0,6 %; pro sezónní okna (týdny) je to omezeně použitelné.")
         if ecb_rates:
             season_daily["usd"] = seasonality.daily_view(
                 dict(dxy.daily_from_ecb(ecb_rates)), now, "usd", "Dolar (DXY)", source="DXY přepočtený z denních kurzů ECB od 1999")
@@ -504,8 +508,9 @@ def _fx_trend(code: str, warnings: list[str]) -> tuple[str | None, dict | None]:
     if cur is now_bs and d1s.provider != now_bs.provider:
         prev = None  # never compare prices of two different feeds
     price = {"value": last, "change_pct": round((last / prev - 1) * 100, 2) if prev else None,
-             "as_of": cur.quality.get("as_of"), "live": cur.quality.get("status") == "LIVE", "source": cur.source,
-             "quality": cur.quality, "proxy": cur.proxy, "kind": cur.kind}
+             "as_of": cur.last_quote.get("time") or cur.quality.get("as_of"), "live": cur.quality.get("status") == "LIVE",
+             "source": cur.source, "quality": cur.quality, "proxy": cur.proxy, "kind": cur.kind, "market": cur.market,
+             "last_quote": cur.last_quote}
     out = (swing.get("word"), price)
     _fx_cache[code] = (time.monotonic(), out)
     return out
@@ -557,7 +562,8 @@ def _markets_section(tra_score, gold_rows, ecb_rates, dollar, news, events, seas
         q = info.get("quality") or {}
         prices["XAUUSD"] = {"value": last, "change_pct": round((last / prev - 1) * 100, 2) if prev else None,
                             "as_of": q.get("as_of") or gold_d1[-1].time.isoformat(), "live": q.get("status") == "LIVE",
-                            "source": info.get("source") or "XAUUSD", "quality": q}
+                            "source": info.get("source") or "XAUUSD", "quality": q, "market": info.get("market"),
+                            "last_quote": info.get("last_quote")}
     swing = (mtf.analyze_all({"D1": gold_d1, "W1": candles.get("W1", [])}, unit="$").get("swing") or {}) if gold_d1 else {}
     trends["XAUUSD"] = swing.get("word")
 

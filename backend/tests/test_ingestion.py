@@ -73,6 +73,23 @@ def _patch_all_connectors(monkeypatch):
     monkeypatch.setattr(rss_news, "fetch_all_feeds", _fake_rss_feeds)
     monkeypatch.setattr(gdelt, "fetch_all_queries", _fake_gdelt_queries)
     monkeypatch.setattr(nbp, "fetch_gold_usd", _fake_gold_daily)
+    from app.data import oanda
+
+    monkeypatch.setattr(oanda, "token", lambda: "test-token")
+    monkeypatch.setattr(oanda, "fetch_bars", _fake_oanda_gold)
+
+
+def _fake_oanda_gold(symbol, tf, count=1000, client=None):
+    """XAUUSD from its own (test) broker feed — daily and weekly bars only."""
+    from app.data import oanda
+    from app.data.bars import resample
+
+    if symbol != "XAU_USD" or tf not in ("D1", "W1", "MN1"):
+        raise oanda.OandaUnavailable("v testu jen XAU_USD D1/W1")
+    bars = [(int(dt.datetime.fromisoformat(d).replace(tzinfo=dt.timezone.utc).timestamp()), v, v + 6, v - 6, v + 1, 100.0)
+            for d, v in sorted(_fake_gold_daily(None).items())]
+    return (bars if tf == "D1" else resample(bars, tf)), {"symbol": symbol, "broker": "OANDA", "server": "practice",
+                                                           "volume": "tick volume OANDA"}
 
 
 def _fake_gold_daily(now, client=None, sleep_fn=None, cache_file=None):

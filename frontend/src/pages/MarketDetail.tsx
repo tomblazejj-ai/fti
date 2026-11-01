@@ -141,7 +141,10 @@ function Breakdown({ m }: { m: MarketCard }) {
                 {c.score === null ? "—" : scoreText(c.score)}
                 <small>/±{c.max}</small>
               </span>
-              <p className="comp-text">{c.text}</p>
+              <p className="comp-text">
+                {c.text}
+                {c.details.length > 0 && <small className="comp-details">{c.details.join(" · ")}</small>}
+              </p>
             </li>
           );
         })}

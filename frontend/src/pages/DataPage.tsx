@@ -1,11 +1,11 @@
 import { useState, type CSSProperties } from "react";
-import { QualityBadge } from "../components/Bits";
+import { MarketChip, QualityBadge } from "../components/Bits";
 import { Icon } from "../components/Icon";
 import { Card, Empty, ErrorState, Skeleton } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
 import { STATIC, api } from "../lib/api";
 import { formatDateTime } from "../lib/format";
-import type { AuditRow, SourcesResponse } from "../lib/types";
+import type { AuditRow, MarketStateInfo, ProbeRow, SourcesResponse } from "../lib/types";
 
 const SRC_STATUS: Record<string, string> = { ok: "funguje", degraded: "poslední pokus selhal", down: "nefunguje", unknown: "zatím nezkoušeno" };
 
@@ -26,11 +26,63 @@ export function DataPage() {
         {audit.error && !audit.data ? <ErrorState message={audit.error.message} onRetry={audit.reload} /> :
           !audit.data ? <Skeleton rows={6} /> : <AuditTable rows={audit.data.rows} />}
       </Card>
+      {!STATIC && <SourceTest />}
       <Card title="Stav zdrojů" icon={<Icon name="clock" size={16} />} i={3} id="zdroje">
         {src.error && !src.data ? <ErrorState message={src.error.message} onRetry={src.reload} /> :
           !src.data ? <Skeleton rows={4} /> : <Sources s={src.data} />}
       </Card>
     </main>
+  );
+}
+
+/** One real request per source: content and freshness checked, not just "HTTP 200". */
+function SourceTest() {
+  const [rows, setRows] = useState<ProbeRow[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [at, setAt] = useState<string | null>(null);
+  const run = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api.dataTest();
+      setRows(r.rows);
+      setAt(r.tested_at);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card title="Test dostupnosti zdrojů" icon={<Icon name="bolt" size={16} />} i={2} id="test"
+          extra={<button type="button" className="btn-primary" onClick={run} disabled={busy}>{busy ? "Testuji…" : "Otestovat všechny zdroje"}</button>}>
+      <p className="hint" style={{ marginTop: 0 } as CSSProperties}>
+        Každý zdroj dostane jeden skutečný dotaz. Kontroluje se obsah a stáří nejnovějšího údaje vůči obvyklému rytmu zdroje — ne jen to, že server odpověděl.
+      </p>
+      {err && <p className="msg-err">{err}</p>}
+      {rows && (
+        <div className="twrap">
+          <table className="dtable">
+            <thead>
+              <tr><th>Zdroj</th><th>Výsledek</th><th>Nejnovější údaj</th><th>Záznamů</th><th>Odezva</th></tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.key}>
+                  <td>{r.name}</td>
+                  <td><span className={`src-dot src-${r.ok ? "ok" : "down"}`} />{r.ok ? "funguje" : "problém"}{r.error && <small>{r.error}</small>}</td>
+                  <td><QualityBadge q={r.quality} /> {r.latest ? formatDateTime(r.latest) : "—"}</td>
+                  <td>{r.records}</td>
+                  <td>{r.ms} ms</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {at && <p className="note">Otestováno {formatDateTime(at)}.</p>}
+    </Card>
   );
 }
 
@@ -57,6 +109,10 @@ function AuditTable({ rows }: { rows: AuditRow[] }) {
               </td>
               <td>
                 <QualityBadge q={{ status: r.status, label: r.status, as_of: null, age_hours: null, text: r.verdict }} /> {r.gets}
+                {r.market && "state" in r.market && <small><MarketChip m={r.market as MarketStateInfo} /> {(r.market as MarketStateInfo).reason}</small>}
+                {r.last_quote && "time_cs" in r.last_quote && (
+                  <small>poslední hodnota {r.last_quote.time_cs}{r.last_quote.tradable_now ? " · živá kotace" : " · není aktuální obchodovatelná kotace"}</small>
+                )}
               </td>
               <td>{r.source}</td>
               <td>{r.verdict}</td>

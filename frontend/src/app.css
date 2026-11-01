@@ -1177,6 +1177,11 @@ a.tile:hover .tile-go {
 .comp-score.na {
   color: var(--faint);
 }
+.comp-details {
+  display: block;
+  margin-top: 2px;
+  color: var(--faint);
+}
 .comp-text {
   grid-column: 1 / -1;
   font-size: 12.5px;
@@ -1568,6 +1573,46 @@ a.tile:hover .tile-go {
 .qb-unavailable {
   color: var(--neg);
   background: var(--neg-bg);
+}
+.mk {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  vertical-align: middle;
+  color: var(--muted);
+  background: var(--zero-bg);
+}
+.mk-open {
+  color: var(--pos);
+  background: var(--pos-bg);
+}
+.mk-trading_break,
+.mk-pre_market,
+.mk-post_market {
+  color: var(--warn);
+  background: var(--warn-bg);
+}
+.lq {
+  font-size: 12px;
+  color: var(--muted);
+}
+.lprice-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex-basis: 100%;
+}
+.lprice.is-big {
+  flex-wrap: wrap;
+}
+.lprice-na {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
 }
 .cchart-notes {
   margin: 6px 0 0;

@@ -53,17 +53,17 @@ def test_paxg_comes_from_kraken_and_is_labelled_as_a_proxy(monkeypatch):
     assert any("PAXG" in n for n in bs.notes)
 
 
-def test_nbp_reference_gives_xauusd_only_daily_data_and_says_so(monkeypatch):
+def test_nbp_reference_is_never_an_xauusd_price(monkeypatch):
+    """NBP's daily gold price lags the market by 1-2 days (verified 2026-11-01): never XAUUSD's price."""
     from app.connectors import nbp
 
     monkeypatch.setattr(nbp, "fetch_gold_usd", lambda now, client=None, sleep_fn=None, cache_file=None:
                         {(dt.date(2026, 1, 1) + dt.timedelta(days=i)).isoformat(): 4000 + i for i in range(300)})
-    h1 = bars.get_bars("XAUUSD", "H1", now=NOW, store=False)
-    assert not h1.ok  # no intraday data from a daily reference
-    d1 = bars.get_bars("XAUUSD", "D1", now=NOW, store=False)
-    assert d1.ok and d1.provider == "nbp" and d1.close_only and d1.kind == "reference_daily"
-    assert any("není to kotace XAU/USD" in n for n in d1.notes)
-    assert not d1.proxy
+    assert all(p != "nbp" for p, _ in universe.get("XAUUSD").feeds)
+    for tf in ("H1", "D1", "W1"):
+        bs = bars.get_bars("XAUUSD", tf, now=NOW, store=False)
+        assert not bs.ok and bs.quality["status"] == quality.UNAVAILABLE
+    assert any("NBP" in n and "nepoužívá" in n for n in bs.notes)
 
 
 def _fake_mt5(rows, tick_time=None):

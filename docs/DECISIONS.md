@@ -327,3 +327,26 @@ globální pravidlo pravdivosti všech instrumentů a rozpočet **0 Kč** pro ce
 - **Stránka Data:** audit všech instrumentů (co FTI skutečně dostává, odkud, jestli to odpovídá,
   omezení, doporučení), stav zdrojů, připojení MT5/OANDA a klíče (ukládají se jen do
   `backend/.env`, API je nikdy nevrací). Do veřejného exportu nejde nic z nastavení PC.
+
+## Modul 11 — jedna cenová vrstva, stav trhu, ověření zdrojů (2026-11-01)
+
+- **Cena 4 051,59 u zlata byla denní cena NBP** (511,29 PLN/g ÷ 3,9251 × 31,1035) a lišila se
+  o 4,5 % od skutečného pátečního závěru (~3 875, TradingView OANDA). Měření na 497 dnech:
+  NBP nejlépe odpovídá závěru *předchozího* obchodního dne, medián odchylky 0,6 %. NBP proto
+  není zdrojem ceny XAUUSD v žádném modulu; zůstává jen jako označená referenční řada pro
+  dlouhodobá sezónní okna. XAUUSD bez OANDA/MT5 = „cena nedostupná“.
+- **USD/JPY, EUR/JPY, AUD/JPY, EUR/AUD, EUR/CAD z Krakenu byly falešné kotace** (54–94 %
+  hodinových svíček bez obchodu, USD/JPY o 1,7 % mimo fixing ECB). Každý pár z Krakenu se teď
+  automaticky kontroluje (podíl svíček bez obchodu, odchylka od fixingu ECB ve 14:15 SEČ/SELČ);
+  neprojde-li, zůstane jen denní fixing ECB a intradenní data jsou nedostupná.
+- **Jedna autoritativní cena** (`app/data/prices.py`): lišta, karty, detail, graf i analýza
+  berou cenu ze stejné řady (`bars.get_bars`); změna se počítá jen proti závěru téhož zdroje.
+- **Stav trhu** (`app/data/market_hours.py`): OPEN / CLOSED / PRE_MARKET / POST_MARKET /
+  TRADING_BREAK / HOLIDAY / UNKNOWN z kalendářů burz (NYSE, CME Globex, Xetra, LSE, TSE, forex,
+  kovy, kryptoburza přes SystemStatus Krakenu), svátky podle pravidel burz, časová pásma přes
+  tzdata (letní/zimní čas). Otevřený trh bez nových kotací → STALE; zavřený trh → poslední
+  kotace s datem a časem, nikdy jako obchodovatelná cena.
+- **Test zdrojů** na stránce Data: jeden skutečný dotaz na každý zdroj, kontrola obsahu a stáří
+  nejnovějšího údaje (ne jen HTTP 200).
+- Fundamentální karta zlata ukazuje u každé kategorie data a jejich období (např. HDP USA
+  +3,4 % = 3. čtvrtletí 2026, anualizovaně).

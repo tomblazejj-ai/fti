@@ -1,5 +1,26 @@
 // Shapes of the backend's JSON answers (/api/markets, /api/calendar, /api/tickers, candles).
 
+/** Market state of an instrument (backend app/data/market_hours.py). */
+export interface MarketStateInfo {
+  state: "OPEN" | "CLOSED" | "PRE_MARKET" | "POST_MARKET" | "TRADING_BREAK" | "HOLIDAY" | "UNKNOWN";
+  label: string;
+  reason: string;
+  calendar: string;
+  exchange_tz: string;
+  next_change: string | null;
+}
+
+/** The last real price of an instrument and whether it is a tradable quote right now. */
+export interface LastQuote {
+  price: number;
+  time: string;
+  time_cs: string;
+  age_minutes: number;
+  tradable_now: boolean;
+  kind_cs: string;
+  note: string | null;
+}
+
 export interface Quote {
   symbol: string;
   label: string;
@@ -9,6 +30,11 @@ export interface Quote {
   source: string;
   live: boolean;
   as_of?: string;
+  market?: MarketStateInfo;
+  proxy?: boolean;
+  kind_cs?: string;
+  provider?: string;
+  quote_time_cs?: string;
 }
 
 export interface MarketState {
@@ -22,6 +48,7 @@ export interface MarketState {
 export interface TickersResponse {
   live: Quote[];
   daily: Quote[];
+  unavailable?: { symbol: string; label: string; reason: string; market?: MarketStateInfo }[];
   error: string | null;
   fetched_at: string;
   market?: MarketState;
@@ -78,6 +105,8 @@ export interface CandlesResponse {
   kind_cs?: string;
   volume_note?: string | null;
   instrument?: InstrumentIdentity | null;
+  market?: MarketStateInfo;
+  last_quote?: LastQuote;
   fetched_at: string;
 }
 
@@ -92,6 +121,19 @@ export interface AuditRow {
   status: QualityStatus;
   limits: string;
   recommendation: string;
+  market?: MarketStateInfo | Record<string, never>;
+  last_quote?: LastQuote | Record<string, never>;
+}
+
+export interface ProbeRow {
+  key: string;
+  name: string;
+  ok: boolean;
+  ms: number;
+  records: number;
+  latest: string | null;
+  quality: DataQuality;
+  error: string | null;
 }
 
 export interface SourceRow {
@@ -170,6 +212,8 @@ export interface MarketPrice {
   quality?: DataQuality;
   proxy?: boolean;
   kind?: string;
+  market?: MarketStateInfo | null;
+  last_quote?: LastQuote | null;
 }
 
 export interface MarketNews {

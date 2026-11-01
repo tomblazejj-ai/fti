@@ -136,11 +136,13 @@ def _cfd(code: str, underlying: str, name: str, quote: str, unit: str, digits: i
 INSTRUMENTS: list[Instrument] = [
     # --- Gold & silver: spot metal (OTC) is separate from the token -----------------------------
     Instrument("XAUUSD", "XAU/USD", "Zlato (spot)", "commodity", "spot_metal", "USD za trojskou unci", "USD", "XAU", 2, 0.01, 100,
-               feeds=(("mt5", "XAUUSD"), ("oanda", "XAU_USD"), ("nbp", "XAUUSD")),
+               feeds=(("mt5", "XAUUSD"), ("oanda", "XAU_USD")),
                venue="spotový trh se zlatem (OTC, Londýn)", currencies=("USD",),
                cot="GOLD - COMMODITY EXCHANGE INC.", cot_report="disaggregated", fundamental="gold", news=_GOLD_NEWS,
                notes=("Spotové zlato se obchoduje mimo burzu (OTC): každá živá kotace je kotace konkrétního brokera nebo banky. "
-                      "Denní referenční cena NBP je přepočet, ne kotace, a slouží jen pro denní a delší rámce.",)),
+                      "Bez připojeného zdroje (OANDA demo nebo MT5) FTI cenu XAUUSD nezobrazuje. Denní cena NBP se jako cena "
+                      "XAUUSD nepoužívá: ověřeno 1. 11. 2026, že se zpožďuje o 1–2 obchodní dny (NBP 30. 10. = 4 051,59 USD, "
+                      "skutečný páteční závěr ~3 880 USD). Slouží jen pro dlouhodobou sezónnost.",)),
     Instrument("PAXGUSD", "PAXG/USD", "PAX Gold (token)", "crypto", "token", "USD za 1 token (≈ 1 trojská unce)", "USD", "PAXG",
                2, 0.01, 1, feeds=(("kraken", "PAXGUSD"),), proxy=True, underlying="XAUUSD",
                proxy_note="PAXG je token společnosti Paxos krytý zlatem, obchoduje se 24/7 na kryptoburze. Není to XAU/USD: "

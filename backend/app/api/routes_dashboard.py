@@ -293,16 +293,26 @@ def _cached(key: str, ttl: float, fn):
 
 @router.get("/tickers")
 def get_tickers(session: Session = Depends(get_session)):
-    from app.connectors import kraken
+    from app.data import prices
 
-    try:
-        live = list(_cached("tickers", TICKER_TTL, kraken.fetch_tickers))
-        error = None
-    except kraken.KrakenUnavailableError as exc:
-        live, error = [], str(exc)
-    dollar = _live_dxy()
-    if dollar:
-        live.insert(1, dollar)
+    def build():
+        out, missing = [], []
+        for code in prices.TICKER_CODES:
+            q = prices.quote(code)
+            if not q.get("available"):
+                missing.append({"symbol": code, "label": q.get("symbol", code), "market": q.get("market"),
+                                "reason": " ".join(q.get("notes") or [])[:200]})
+                continue
+            lq = q["last_quote"]
+            out.append({"symbol": code, "label": q["symbol"], "price": round(q["price"], q["digits"]), "digits": q["digits"],
+                        "change_pct": q["change_pct"], "source": q["source"], "provider": q["provider"],
+                        "live": bool(lq.get("tradable_now")), "as_of": lq.get("time"), "quote_time_cs": lq.get("time_cs"),
+                        "market": q["market"], "proxy": q["proxy"], "kind_cs": q["kind_cs"], "quality": q["quality"]})
+        return out, missing
+
+    live, unavailable = _cached("tickers", TICKER_TTL, build)
+    live = [dict(q) for q in live]
+    error = None
     instrument = session.scalar(select(Instrument).where(Instrument.code == "XAUUSD"))
     analysis = _latest_analysis(session, instrument.id) if instrument else None
     daily = []
@@ -314,10 +324,12 @@ def get_tickers(session: Session = Depends(get_session)):
                           "live": False, "as_of": (p.get("as_of") or "")[:10]})
     now = dt.datetime.now(dt.timezone.utc)
     market = market_status.status(now)
+    from app.data import market_hours, universe
+
     paxg = next((q["price"] for q in live if q["symbol"] == "PAXGUSD"), None)
     check = _cached("price_check", 60.0, lambda: _price_check(paxg))
     weekend = None  # the old "weekend gap" read PAXG as if it were spot gold — removed (user's spec 2026-11-01)
-    return {"live": live, "daily": daily, "error": error, "fetched_at": now, "market": market,
+    return {"live": live, "daily": [], "unavailable": unavailable, "error": error, "fetched_at": now, "market": market,
             "price_check": check, "weekend": weekend}
 
 
@@ -397,6 +409,7 @@ def get_candles(code: str, tf: str = "H1"):
     rows = _chart_rows(bs.bars[-600:])
     return {"tf": tf, "code": code, "source": bs.source, "provider": bs.provider, "candles": rows, "line_only": bs.close_only,
             "quality": bs.quality, "proxy": bs.proxy, "notes": bs.notes, "instrument": info["instrument"], "kind": bs.kind,
+            "market": bs.market, "last_quote": bs.last_quote,
             "kind_cs": info["kind_cs"], "volume_note": bs.meta.get("volume"), "fetched_at": dt.datetime.now(dt.timezone.utc)}
 
 

@@ -1,4 +1,4 @@
-import type { AuditRow, CalendarAll, CandlesResponse, MarketsResponse, SourcesResponse, TickersResponse } from "./types";
+import type { AuditRow, CalendarAll, CandlesResponse, MarketsResponse, ProbeRow, SourcesResponse, TickersResponse } from "./types";
 
 // Same-origin by default (the web build is served by FastAPI itself).
 let baseUrl = "";
@@ -88,22 +88,23 @@ export const api = {
   sources: () => request<SourcesResponse>("/api/sources"),
   setKey: (name: string, value: string) => post<{ keys: SourcesResponse["keys"] }>("/api/keys", { name, value }),
   updateSettings: (patch: Record<string, unknown>) => post<Record<string, unknown>>("/api/settings", { patch }),
+  dataTest: () => post<{ tested_at: string; rows: ProbeRow[] }>("/api/data/test", {}),
   mt5Test: () => post<{ ok: boolean; bars: number; symbol: string; broker: string; server: string }>("/api/mt5/test", {}),
 };
 
 // Kraken's public API allows browser requests, so the phone version shows live prices
 // on top of the snapshot (which is at most ~30 minutes old).
-const KRAKEN = { PAXGUSD: "PAXGUSD", EURUSD: "ZEURZUSD", GBPUSD: "ZGBPZUSD" } as const;
+const KRAKEN = { PAXGUSD: "PAXGUSD", EURUSD: "ZEURZUSD", GBPUSD: "ZGBPZUSD", BTCUSD: "XXBTZUSD", ETHUSD: "XETHZUSD" } as const;
 
 async function staticTickers(): Promise<TickersResponse> {
   const snap = await request<TickersResponse>("/api/tickers");
   try {
-    const r = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${Object.keys(KRAKEN).join(",")}`);
+    const r = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${Object.values(KRAKEN).join(",")}`);
     const body = await r.json();
     const result = body?.result ?? {};
     const live = snap.live.map((q) => {
       const key = KRAKEN[q.symbol as keyof typeof KRAKEN];
-      const row = key ? result[key] : undefined;
+      const row = key && q.provider === "kraken" ? result[key] : undefined;  // only refresh a quote from its own feed
       if (!row) return q;
       const last = Number(row.c[0]);
       const open = Number(row.o);

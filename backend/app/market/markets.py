@@ -170,7 +170,8 @@ def gold_result(tra: dict | None) -> dict | None:
     xau = (tra or {}).get("xau")
     if not xau:
         return None
-    comps = [{"key": c["key"], "label": c["label"], "score": c["score"], "max": c["max"], "text": c["reason"], "details": []}
+    comps = [{"key": c["key"], "label": c["label"], "score": c["score"], "max": c["max"], "text": c["reason"],
+              "details": [f"{i['name']}: {i['value']} (data k {i['as_of']})" for i in c.get("inputs") or []]}
              for c in xau["components"]]
     have = [c for c in comps if c["score"] is not None]
     possible = sum(c["max"] for c in have)
