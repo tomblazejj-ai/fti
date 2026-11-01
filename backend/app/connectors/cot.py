@@ -200,8 +200,8 @@ def fetch_disaggregated(market: str, weeks: int = 160, client: httpx.Client | No
 
 
 # --- Traders in Financial Futures (TFF): who holds the US DOLLAR (checked live 2026-10-06)
-# Dataset gpe5-46if, market "USD INDEX - ICE FUTURES U.S.". The Funded Mind COT lessons read
-# the "Leveraged Funds" (hedge funds) group of exactly this report for currencies.
+# Dataset gpe5-46if, market "USD INDEX - ICE FUTURES U.S."; for currencies the "Leveraged
+# Funds" (hedge funds) group of this report is the usual read.
 TFF_DATASET_URL = "https://publicreporting.cftc.gov/resource/gpe5-46if.json"
 USD_INDEX_MARKET_NAME = "USD INDEX - ICE FUTURES U.S."
 TFF_FIELDS = (

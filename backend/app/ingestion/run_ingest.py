@@ -24,7 +24,7 @@ from app.connectors.cot import CotUnavailableError
 from app.connectors.fred import FredUnavailableError
 from app.ingestion.transforms import InsufficientHistoryError, SeriesSpec, derive
 from app.instruments import PRIMARY_HORIZON
-from app.market import momentum, setup, tra
+from app.market import markets, momentum, tra
 from app.market import service as market_service
 from app.market.service import compute_market_analysis
 from app.models import (
@@ -317,7 +317,7 @@ def sync_portals(session: Session) -> list[str]:
     return errors
 
 
-TRANSLATE_PER_CYCLE = 40
+TRANSLATE_PER_CYCLE = 60
 TRANSLATE_LOOKBACK_DAYS = 7
 
 
@@ -335,7 +335,7 @@ def translate_pending_headlines(session: Session, limit: int = TRANSLATE_PER_CYC
     for item in candidates:
         if done >= limit:
             break
-        if not item.factor_tags and "XAUUSD" not in item.instrument_tags:
+        if not item.factor_tags and "XAUUSD" not in item.instrument_tags and not markets.ANY_MARKET.search(item.title):
             continue
         cz_title = translate.translate(item.title)
         if cz_title is None:
@@ -586,7 +586,7 @@ def _key_news(scored: list, now: dt.datetime, limit: int = 5) -> list[dict]:
     ]
 
 
-# --- Funded Mind / Trading Analyzer score history ("Score history", "Score momentum")
+# --- fundamental score history and its momentum
 TRA_STORE_MINUTES = 60  # a live point at least hourly, and on every change
 TRA_BACKFILL_DAYS = 365
 TRA_GAP_HOURS = 36  # the app was closed longer than this → rebuild the missing days
@@ -663,12 +663,9 @@ def _tra_history(session: Session, payload: dict, now: dt.datetime) -> None:
             backfill_tra(session, inputs, now)
         store_tra_points(session, tra_block, now)
         tra_block["momentum"] = tra_momentum(session, inputs, now)
-        if payload.get("weekly") is not None:  # now with the week's score change
-            payload["weekly"] = setup.weekly_plan(payload.get("setup"), payload.get("calendar"), tra_block, payload.get("cot"),
-                                                  (payload.get("season_daily") or {}).get("gold"), now)
     except Exception:  # noqa: BLE001 — the score history must never cost us the analysis
         session.rollback()
-        logger.exception("TrA score history failed")
+        logger.exception("Score history failed")
 
 
 def _store_market_analysis(session: Session, instrument: Instrument, primary: ScoreSnapshot, now: dt.datetime, macro: dict | None = None) -> None:

@@ -21,7 +21,7 @@ from app.connectors import calendar_ics, cot, ecb, ffcal, fred, fred_calendar, i
 from app.connectors.cot import CotUnavailableError
 from app.connectors.fred import FredUnavailableError
 from app.market import (central_banks, decision, dxy, econ_calendar, fx_model, headline_risk, market_status, markets, mtf,
-                        scorecard, seasonality, setup, sources, tra, zones)
+                        scorecard, seasonality, sources, tra)
 from app.market.cot_analysis import analyze as analyze_cot, analyze_usd, long_short_view
 from app.market.technical import MIN_HISTORY, InsufficientPriceHistory, analyze
 from app.scoring.xauusd import FOMC_DECISION_DATES_2026
@@ -84,7 +84,7 @@ FAIL_RETRY_SECONDS = 900.0  # a source that just failed is not asked again on ev
 _failed: dict[str, float] = {}
 TRA_HISTORY_DAYS = 1300  # y/y three months back for a whole year of score history
 CAL_HISTORY_DAYS = 2000  # the Fed rate history in the FOMC detail goes back several changes
-# The last inputs of the Trading Analyzer score — the ingestion uses them to rebuild the score history.
+# The last inputs of the fundamental score — the ingestion uses them to rebuild the score history.
 LAST_TRA: dict[str, object] = {"inputs": None}
 
 
@@ -139,7 +139,7 @@ def _closes(candles: list) -> list[tuple[str, float]]:
 
 def _tra_section(gold_rows: list[dict], candles: dict, dxy_candles: dict, ecb_rates: dict | None, now: dt.datetime,
                  warnings: list[str]) -> tuple[dict | None, dict | None, dict | None]:
-    """Funded Mind / Trading Analyzer score for XAU/USD and the USD, plus the long seasonality
+    """The 11-category fundamental score for XAU/USD and the USD, plus the long seasonality
     and the dollar COT. Returns (tra, seasonality_long, cot_usd)."""
     fred_hist = _macro_series(tra.TRA_FRED_IDS, TRA_HISTORY_DAYS, warnings)
     usd_rows = _soft("cot:tff_usd", "cot", cot.fetch_usd_index_tff, warnings, "COT dolaru (CFTC TFF)") or []
@@ -153,7 +153,7 @@ def _tra_section(gold_rows: list[dict], candles: dict, dxy_candles: dict, ecb_ra
     )
     LAST_TRA["inputs"] = inputs
     score = tra.compute(inputs, now, live=True)
-    score["proxies_note"] = ("Kde metodika používá placená data (ISM PMI, sentiment brokerů, pravděpodobnosti sazeb), "
+    score["proxies_note"] = ("Kde by bylo potřeba placených dat (ISM PMI, sentiment brokerů, pravděpodobnosti sazeb), "
                              "počítáme s oficiálními veřejnými daty — u položky je to vždy napsané.")
 
     long_season = {}
@@ -256,13 +256,13 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
     dollar, dxy_candles = _dxy_section(candles, now, warnings)
     market = market_status.status(now)
 
-    # --- Funded Mind methodology (extensions; each part is optional and never breaks the rest)
+    # --- fundamental score, long seasonality and the dollar COT (each part optional, never breaks the rest)
     tra_score = season_long = cot_usd = None
     try:
         tra_score, season_long, cot_usd = _tra_section(gold_rows, candles, dxy_candles, ecb_rates, now, warnings)
     except Exception as exc:  # noqa: BLE001
-        logger.exception("TrA score failed")
-        warnings.append(f"Skóre podle metodiky se nepodařilo spočítat: {exc}")
+        logger.exception("Fundamental score failed")
+        warnings.append(f"Fundamentální skóre se nepodařilo spočítat: {exc}")
     if cot_result and gold_rows:
         cot_result["long_short"] = long_short_view(gold_rows, "spec_long", "spec_short", _closes(daily), asset="gold", who="Fondy")
         cot_result["retail"] = long_short_view(gold_rows, "small_long", "small_short", asset="gold", who="Malí obchodníci")
@@ -281,9 +281,8 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
         dollar["usd_score"] = (tra_score or {}).get("usd")
     headline = headline_risk.build((news or {}).get("headline") or [], candles.get("M15", []), market, now)
 
-    # --- the assistant: weekly/daily zones + the strategy checklist + the week ahead (Funded Mind video)
+    # daily seasonal windows (data only — gold from NBP, the dollar from ECB fixings)
     season_daily: dict = {}
-    zone_view = setup_view = weekly = None
     try:
         gold_daily = _soft("nbp:gold", "worldbank", lambda: nbp.fetch_gold_usd(now), warnings, "Denní cena zlata (NBP)")
         if gold_daily:
@@ -292,21 +291,14 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
         if ecb_rates:
             season_daily["usd"] = seasonality.daily_view(
                 dict(dxy.daily_from_ecb(ecb_rates)), now, "usd", "Dolar (DXY)", source="DXY přepočtený z denních kurzů ECB od 1999")
-        if daily:
-            zone_view = zones.analyze(candles.get("W1", []), daily, daily[-1].close)
-        setup_view = setup.build(zone_view, tra_score, season_daily.get("gold"),
-                                 ((season_long or {}).get("gold") or {}).get("score"), cot_result,
-                                 calendar.get("lock"), headline.get("weekend"), now)
-        weekly = setup.weekly_plan(setup_view, calendar, tra_score, cot_result, season_daily.get("gold"), now)
-    except Exception as exc:  # noqa: BLE001 — the assistant must never cost us the rest of the analysis
-        logger.exception("Assistant failed")
-        warnings.append(f"Pomocníka se nepodařilo sestavit: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Seasonality failed")
+        warnings.append(f"Sezónnost se nepodařilo spočítat: {exc}")
     market_view = None
     events_all: list[dict] = []
     try:
         events_all = _all_events(calendar, now, warnings)
-        market_view = _markets_section(tra_score, gold_rows, ecb_rates, dollar, news, events_all, season_daily, setup_view, candles,
-                                       now, warnings)
+        market_view = _markets_section(tra_score, gold_rows, ecb_rates, dollar, news, events_all, season_daily, candles, now, warnings)
     except Exception as exc:  # noqa: BLE001 — the overview of other markets must never cost us gold
         logger.exception("Markets overview failed")
         warnings.append(f"Přehled trhů se nepodařilo sestavit: {exc}")
@@ -332,10 +324,7 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
         "seasonality_long": season_long,
         "cot_usd": cot_usd,
         "headline_risk": headline,
-        "zones": zone_view,
-        "setup": setup_view,
         "season_daily": season_daily or None,
-        "weekly": weekly,
         "markets": market_view,
         "calendar_all": _calendar_payload(events_all, now),
     }
@@ -481,7 +470,7 @@ def _daily_trend(closes: dict[str, float]) -> str | None:
     return {"up": "Nahoru", "down": "Dolů"}.get(t["trend"], "Do strany")
 
 
-def _markets_section(tra_score, gold_rows, ecb_rates, dollar, news, events, season_daily, setup_view, candles, now, warnings) -> dict:
+def _markets_section(tra_score, gold_rows, ecb_rates, dollar, news, events, season_daily, candles, now, warnings) -> dict:
     currencies = _currency_data(warnings)
     tff = {cur: _soft(f"cot:tff:{cur}", "cot", lambda m=m: cot.fetch_tff(m), warnings, f"COT {cur}") or []
            for cur, m in cot.TFF_MARKETS.items() if cur != "USD"}
@@ -528,15 +517,10 @@ def _markets_section(tra_score, gold_rows, ecb_rates, dollar, news, events, seas
     swing = (mtf.analyze_all({"D1": gold_d1, "W1": candles.get("W1", [])}, unit="$").get("swing") or {}) if gold_d1 else {}
     trends["XAUUSD"] = swing.get("word")
 
-    gold_extra = None
-    if setup_view:
-        p = setup_view.get("primary")
-        su = (setup_view.get("setups") or {}).get(p) if p else None
-        gold_extra = {"headline": setup_view["headline"], "action": setup_view["action"], "grade": su["grade"] if su else None}
     ctx = {"currencies": currencies, "tff": tff, "crude_cot": crude, "gold_cot": gold_rows, "seasons": seasons, "tra": tra_score,
            "stocks": stocks, "cfnai": cfnai, "dxy_swing": ((dollar or {}).get("trends") or {}).get("swing"),
-           "headlines": (news or {}).get("headline") or [], "events": events, "prices": prices, "trends": trends,
-           "gold_extra": gold_extra}
+           "headlines": (news or {}).get("headline") or [], "key_news": (news or {}).get("key") or [], "events": events,
+           "prices": prices, "trends": trends}
     view = markets.build(ctx, now)
     for e in view.get("errors", []):
         warnings.append(f"Přehled trhů — {e}")

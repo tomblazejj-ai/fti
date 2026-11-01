@@ -78,7 +78,7 @@ def analyze(weekly: list[Candle], now: dt.datetime) -> dict | None:
     }
 
 
-# --- Long history (Funded Mind: 5 / 10 / 15-year averages, heatmap with "Avg") -----------
+# --- Long history: 5 / 10 / 15-year averages, heatmap with the average ----------------
 
 def _month_returns(monthly: dict[str, float]) -> dict[str, float]:
     keys = sorted(monthly)
@@ -162,9 +162,7 @@ def _r(v: float | None, digits: int = 2) -> float | None:
     return None if v is None else round(v, digits)
 
 
-# --- Daily seasonal windows (Funded Mind video: "od 11. září do 9. října … všechny roky skončily
-# negativně"). Same calendar days in each of the last N years; the window is a hint for swing
-# trades — "plus mínus jeden až tři týdny", never an exact date.
+# --- Daily seasonal windows: the same calendar days in each of the last N years.
 import bisect  # noqa: E402
 
 WINDOW_LENGTHS = (14, 21, 30, 42)  # calendar days

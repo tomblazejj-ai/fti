@@ -1,4 +1,4 @@
-"""Skóre podle metodiky Funded Mind / Trading Analyzer ("Score overview").
+"""Fundamentální skóre XAU/USD a dolaru — 11 kategorií sečtených do ±25.
 
 The lesson defines the categories and their ranges; the total is their plain SUM
 (EUR-JPY example in the PDF: 1+1+2+2+2+1+0+0+2−2+0 = 9). For a pair the
@@ -22,7 +22,7 @@ Every rule below is a fixed, readable threshold — the PDFs give the ranges and
 the direction of each effect, not the exact formulas; those choices are ours and
 are written next to each score so the trader can see why it moved.
 
-Data that the course takes from paid feeds is replaced by free official data and
+Data that would need paid feeds are replaced by free official data and
 labelled as such: ISM/S&P PMI → regional Fed surveys (diffusion indexes, 0 =
 no change), broker retail sentiment → CFTC small traders, rate-probability tools
 → the 2-year Treasury yield against the effective Fed funds rate.
@@ -319,7 +319,7 @@ def _index(values: list[float]) -> float | None:
 
 
 def gold_cot_score(rows: list[dict]) -> tuple[int, dict] | None:
-    """Funds (managed money): crowding level + 4-week flow. Since 2026-10-17 (Funded Mind video)
+    """Funds (managed money): crowding level + 4-week flow. Since 2026-10-17
     also the commercials at a 3-year extreme (±1) and the open interest: when contracts are being
     closed (OI −3 % in 4 weeks) the funds' flow counts one step less."""
     if len(rows) < 30:
@@ -532,7 +532,7 @@ def compute(inputs: TraInputs, asof: dt.datetime, known: dict[str, AsOf] | None 
     else:
         usd["retail"] = _missing("retail", "Data o malých obchodnících chybí.")
 
-    # Seasonality — 10 years like the Trading Analyzer
+    # Seasonality — the last 10 years
     gold_rets = monthly_returns({m: v for m, v in inputs.gold_monthly.items()
                                  if live or dt.date(int(m[:4]), int(m[5:]), 1) + dt.timedelta(days=35) <= day})
     sg = seasonality_score(gold_rets, day)

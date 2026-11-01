@@ -118,7 +118,7 @@ def test_watch_list_keeps_important_events_of_the_pair():
     assert [x["title"] for x in w] == ["Rozhodnutí BoE"] and w[0]["impact_text"] == "Vysoký dopad na GBP"
 
 
-def test_gold_score_is_scaled_from_the_course_model():
+def test_gold_score_is_scaled_from_the_11_category_model():
     tra = {"xau": {"total": -9, "missing": [], "components": [
         {"key": "rates", "label": "Úrokové sazby", "score": -2, "max": 2, "reason": "Fed"},
         {"key": "trend", "label": "Trend", "score": -7, "max": 23, "reason": "x"}]}}
@@ -206,3 +206,41 @@ def test_markets_and_calendar_endpoints(db_session):
         assert len(client.get("/api/calendar").json()["events"]) == 1
     finally:
         app.dependency_overrides.clear()
+
+
+# --- technical outlooks, highlights, next events ---------------------------------------------------
+
+def test_technical_outlooks_come_only_from_public_analyses_of_that_market():
+    heads = [
+        {"title": "EUR/USD Price Forecast: býci míří na 1,1200", "title_en": "EUR/USD Price Forecast: bulls eye 1.1200",
+         "source": "FXEmpire prognózy", "url": "u1", "published_at": "2026-10-31T08:00:00+00:00", "translated": True},
+        {"title": "Fed nechal sazby", "title_en": "Fed holds rates", "source": "CNBC", "url": "u2",
+         "published_at": "2026-10-31T09:00:00+00:00", "translated": True},
+        {"title": "Gold technical outlook", "title_en": "Gold technical outlook", "source": "Investing.com technika komodit", "url": "u3",
+         "published_at": "2026-10-31T07:00:00+00:00", "translated": False},
+    ]
+    eur = markets.technical_outlooks(heads, "EURUSD")
+    assert [h["url"] for h in eur] == ["u1"]
+    assert [h["url"] for h in markets.technical_outlooks(heads, "XAUUSD")] == ["u3"]
+    # technical items never end up among the ordinary news of the market
+    assert all(n["url"] != "u1" for n in markets.instrument_news(heads, "EURUSD"))
+
+
+def test_highlights_are_deduplicated_and_newest_first():
+    key = [{"title": "Fed holds", "source": "A", "url": "k1", "published_at": "2026-10-31T09:00:00+00:00", "translated": False, "impact": "bullish"}]
+    cards = [{"code": "EURUSD", "news": [{"title": "Fed holds!", "source": "B", "url": "k2", "published_at": "2026-10-31T09:30:00+00:00", "translated": False},
+                                          {"title": "Euro up", "source": "C", "url": "k3", "published_at": "2026-10-31T10:00:00+00:00", "translated": False}]}]
+    out = markets.highlights(key, cards)
+    assert [h["url"] for h in out] == ["k3", "k1"]
+    assert out[1]["market"] == "XAUUSD" and out[1]["impact"] == "bullish"
+
+
+def test_next_events_keep_only_upcoming_high_impact_of_the_four_currencies():
+    ev = [
+        {"datetime": "2026-10-31T09:00:00+00:00", "currency": "USD", "title_en": "old", "title_cs": "Staré", "impact": 3},
+        {"datetime": "2026-10-31T12:30:00+00:00", "currency": "USD", "title_en": "PCE", "title_cs": "Inflace PCE", "impact": 3, "forecast": "2.8%"},
+        {"datetime": "2026-10-31T13:00:00+00:00", "currency": "EUR", "title_en": "low", "title_cs": "Nízký", "impact": 2},
+        {"datetime": "2026-10-31T14:00:00+00:00", "currency": "CNY", "title_en": "cn", "title_cs": "Čína", "impact": 3},
+    ]
+    out = markets.next_events(ev, NOW)
+    assert [e["title"] for e in out] == ["Inflace PCE"] and out[0]["forecast"] == "2.8%"

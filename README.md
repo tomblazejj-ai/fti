@@ -1,6 +1,6 @@
-# Fundamental Trading Intelligence
+# FTI – Financial Trading Intelligence
 
-Vlastní platforma pro fundamentální swing trading — **0 Kč, žádné registrace,
+Kam míří trhy: fundament, zprávy a kalendář na jednom místě — **0 Kč, žádné registrace,
 žádné API klíče**. Zdroje a jejich ověření: [ARCHITECTURE.md](ARCHITECTURE.md),
 rozhodnutí a proč: [docs/DECISIONS.md](docs/DECISIONS.md).
 
@@ -17,27 +17,26 @@ http://127.0.0.1:8000.
 
 První výpočet po startu trvá asi minutu (stahuje FRED, CFTC, RSS centrálních
 bank a GDELT se zpožděními, které tyto zdroje vyžadují). Pak se data obnovují
-automaticky každých 30 minut, ručně tlačítkem „Obnovit data“.
+automaticky každých 30 minut.
 
 ## Co aplikace umí
 
-- **Přehled trhů (Market Intelligence)** — zlato, EUR/USD, GBP/USD, USD/JPY a ropa
-  WTI se skóre −10 až +10 a biasem LONG/SHORT. Kliknutím detail: co podporuje
-  směr, protiargumenty a rizika, co dál sledovat (události s dopadem), retail
-  sentiment, rozpis skóre, graf a zprávy.
-- **Kalendář** — USD, EUR, GBP a JPY, barvy podle dopadu, prognózy, pravidlo
-  „2 hodiny před červenou zprávou nevstupovat“.
-- **Zlato** — obchodní plán podle metodiky Funded Mind (týdenní a denní zóny,
-  checklist, vstup, SL, cíl) a podrobný rozbor (technika, COT, sezónnost,
-  fundament, zdroje).
-- **Metodika** — materiály kurzu a hlavní pravidla.
+- **Přehled** — nahoře odpočet do další důležité zprávy, pak zlato, EUR/USD,
+  GBP/USD, USD/JPY a ropa WTI se skóre −10 až +10 (ručičkový ukazatel, směr,
+  jedna věta proč), pod tím „Co hýbe trhy“ a „Co může trh ovlivnit“.
+- **Detail trhu** — proč (3 hlavní důvody a co jde proti), co může trh
+  ovlivnit, technický výhled z veřejných webů (Investing.com, FXEmpire,
+  FXStreet — převzaté titulky s odkazem), zprávy, graf, drobní obchodníci a
+  rozpis skóre.
+- **Kalendář** — USD, EUR, GBP a JPY, barvy podle dopadu, prognózy.
+- **Zprávy** — zprávy a technické výhledy podle trhu.
 - **Mobil** — stejná aplikace jako aplikace v telefonu (viz `docs/MOBIL.md`).
 
 ## Zdroje dat (vše zdarma, bez klíčů)
 
 FRED (veřejný CSV download a kalendář zveřejnění), CFTC Commitments of Traders
-(Disaggregated pro zlato, TFF pro dolar), Kraken (PAXG/USD a měny DXY), kurzy
-ECB, BullionVault, Světová banka (měsíční ceny zlata), NBP (denní cena zlata od 2013), BEA, RSS portálů a
+(Disaggregated pro zlato, TFF pro dolar), Kraken (PAXG/USD, EUR/USD, GBP/USD), kurzy
+ECB, Eurostat, ONS, ministerstvo financí Japonska, EIA, kalendář ForexFactory, BullionVault, Světová banka (měsíční ceny zlata), NBP (denní cena zlata od 2013), BEA, RSS portálů a
 centrálních bank, GDELT DOC API, kalendář FOMC z federalreserve.gov.
 
 ## První instalace na novém počítači
@@ -72,7 +71,7 @@ přepínače (vlastní FRED klíč, interval obnovy, jiná databáze).
   na rok 2026 (rok 2027 doplnit, až ho Fed zveřejní). Čas se nikdy nevymýšlí.
 - **Konsensus (forecast)** nemá legální bezplatný zdroj → „surprise“ je
   Actual vs Previous.
-- **ISM PMI** nemá spolehlivý bezplatný zdroj — v metodice ho nahrazují
+- **ISM PMI** nemá spolehlivý bezplatný zdroj — ve skóre ho nahrazují
   regionální průzkumy Fedu (v aplikaci označené „≈“).
 - Celá aplikace je česky. Anglické titulky zpráv překládá lokálně Argos
   Translate (bez internetové služby) a jsou označené jako strojový překlad.

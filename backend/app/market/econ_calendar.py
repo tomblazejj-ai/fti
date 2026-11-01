@@ -28,8 +28,7 @@ INSTRUMENT = "XAUUSD"
 # FOMC statement time, published on every meeting page of federalreserve.gov
 # ("2:00 p.m. EDT"); the press conference follows at 2:30 p.m.
 FOMC_STATEMENT = dt.time(14, 0)
-# Funded Mind, "Fundamentální zprávy a rizika": never enter 2 h before a red
-# (high-impact) release; after it, wait until the market shows a direction.
+# The countdown to the next red (high-impact) release and the hour after it.
 LOCK_HOURS = 2
 CONFIRM_MINUTES = 60
 HISTORY_POINTS = 6
@@ -275,11 +274,10 @@ def news_lock(events: list[dict], now: dt.datetime) -> dict:
         minutes = (dt.datetime.fromisoformat(e["datetime"]) - now).total_seconds() / 60
         if 0 < minutes <= LOCK_HOURS * 60:
             return {"state": "lock", "event": e["name"], "datetime": e["datetime"], "minutes": round(minutes),
-                    "text": f"Za {round(minutes)} min vychází {e['name']} — podle pravidel teď nevstupuj do nových obchodů. "
-                            "Pokud se cena blíží ke tvému vstupu, příkaz zruš."}
+                    "text": f"Za {round(minutes)} min vychází {e['name']} — počítej se zvýšenou volatilitou."}
         if -CONFIRM_MINUTES <= minutes <= 0:
             after = {"state": "after", "event": e["name"], "datetime": e["datetime"], "minutes": round(minutes),
-                     "text": f"{e['name']} právě vyšla — počkej, až trh ukáže směr, a vstupuj až po potvrzení."}
+                     "text": f"{e['name']} právě vyšla — trh na ni teď reaguje."}
     return after or {"state": "clear", "text": f"Žádná červená zpráva v příštích {LOCK_HOURS} hodinách."}
 
 

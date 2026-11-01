@@ -1,15 +1,10 @@
 import { useTickers } from "../hooks/useTickers";
-import { shortDate } from "../lib/format";
-import type { Quote } from "../lib/types";
+import { pct, price, shortDate } from "../lib/format";
 
-function price(q: Quote): string {
-  return q.price.toLocaleString("cs-CZ", { minimumFractionDigits: q.digits, maximumFractionDigits: q.digits });
-}
-
-// FX and spot gold stop with the spot market; Bitcoin trades 24/7.
+// FX and spot gold stop with the spot market; the token price runs on over the weekend.
 const FOLLOWS_SPOT = new Set(["PAXGUSD", "DXY", "EURUSD", "GBPUSD"]);
 
-/** Live quotes (Kraken, every 60 s) + daily closes (FRED, marked with their date). */
+/** Live quotes (Kraken, every 60 s) + daily closes (marked with their date). */
 export function TickerBar() {
   const t = useTickers();
   const quotes = [...(t?.live ?? []), ...(t?.daily ?? [])];
@@ -23,30 +18,18 @@ export function TickerBar() {
       <div className="ticker-track">
         {quotes.map((q) => {
           const ch = q.change_pct;
-          const tone = ch === null ? "" : ch > 0 ? "pos" : ch < 0 ? "neg" : "";
           const weekend = closed && q.live && FOLLOWS_SPOT.has(q.symbol);
           return (
             <span
               key={q.symbol}
-              className={`tick${q.live ? "" : " is-daily"}${weekend ? " is-closed" : ""}`}
-              title={
-                !q.live
-                  ? `${q.source}, denní závěr k ${shortDate(q.as_of)}`
-                  : weekend
-                    ? `${q.source} — spotový trh je zavřený, tohle je víkendový obchod (jen orientačně)`
-                    : `${q.source}, živě`
-              }
+              className={`tick${q.live ? "" : " is-daily"}`}
+              title={!q.live ? `${q.source}, denní závěr k ${shortDate(q.as_of)}` : weekend ? `${q.source} — spotový trh je zavřený` : `${q.source}, živě`}
             >
               <span className="tick-name">{q.label}</span>
-              <span className="tick-price">{price(q)}</span>
-              {ch !== null && !weekend && (
-                <span className={`tick-ch ${tone}`}>
-                  {ch > 0 ? "+" : ch < 0 ? "−" : ""}
-                  {Math.abs(ch).toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %
-                </span>
-              )}
+              <span key={q.price} className="tick-price flash">{price(q.price, q.digits)}</span>
+              {ch !== null && !weekend && <span className={`tick-ch ${ch > 0 ? "pos" : ch < 0 ? "neg" : ""}`}>{pct(ch)}</span>}
               {weekend && <span className="tick-d">víkend</span>}
-              {!q.live && <span className="tick-d">D</span>}
+              {!q.live && <span className="tick-d">denní</span>}
             </span>
           );
         })}

@@ -259,7 +259,7 @@ def live_quote(tickers: dict[str, float], fixings: _JpySek, today: str) -> float
     return dxy_value(tickers["EURUSD"], jpy, tickers["GBPUSD"], tickers["USDCAD"], sek, tickers["USDCHF"])
 
 
-# --- Funded Mind, "DXY a jeho vliv": key levels as the bias, trend as the filter, mirror zones with gold
+# --- DXY key levels, trend filter and "mirror" levels with gold
 WEIGHTS = [  # ICE US Dollar Index basket (fixed since 1999)
     {"code": "EUR", "name": "Euro", "weight": 57.6},
     {"code": "JPY", "name": "Japonský jen", "weight": 13.6},

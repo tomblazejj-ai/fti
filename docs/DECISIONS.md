@@ -202,117 +202,39 @@ Log toho, co už je vyřešené — stejný účel jako sekce 3 v CLAUDE.md u IS
   Ověřeno: RSI (Wilder), MACD 12/26/9, SMA odpovídají TradingView; denní
   svíčka = den UTC (OANDA uzavírá ve 23:00 našeho času) — přiznáno v UI.
 
-## Modul 6 — metodika Funded Mind / Trading Analyzer (2026-10-06)
+## Modul 6 — fundamentální skóre zlata a dolaru, 11 kategorií (2026-10-06)
 
-Zdroj: 20 PDF ve složce Plocha → „Fundament Funded mind“ (Jan Šrajer, Daniel
-Valchář). Souhrn a mapa „co je kde v aplikaci“: `docs/metodika/METODIKA.md`.
-Pravidlo uživatele: **nic nepřepisovat, jen rozšířit** — všechny dosavadní
-panely zůstávají, nové jsou vedle nich.
-
-- **Skóre podle metodiky = součet 11 kategorií (±25).** Rozsahy přesně podle
-  „Score overview“: COT ±3, retail ±1, sezónnost ±2, HDP ±2, inflace ±3, trh
-  práce ±4, sazby ±2, PMI služby ±2, PMI průmysl ±2, tržby ±2, trend ±2.
-  Makro kategorie se počítají pro USD a u XAU/USD mají opačné znaménko. PDF
-  dávají rozsahy a směr vlivu, ne vzorce — prahy jsou naše, pevné a vypsané u
-  každé položky (`app/market/tra.py`).
+- **Skóre = součet 11 kategorií (±25).** COT ±3, retail ±1, sezónnost ±2,
+  HDP ±2, inflace ±3, trh práce ±4, sazby ±2, PMI služby ±2, PMI průmysl ±2,
+  tržby ±2, trend ±2. Makro kategorie se počítají pro USD a u XAU/USD mají
+  opačné znaménko. Prahy jsou pevné a vypsané u každé položky
+  (`app/market/tra.py`).
 - **Náhrady placených dat (vždy označené „≈“ v UI).** ISM/S&P PMI → regionální
   průzkumy Fedu (NY, Philadelphia, Dallas; FRED). Brokerský retail sentiment →
   „malí obchodníci“ z CFTC COT. Pravděpodobnosti sazeb (FedWatch) → 2letý
   výnos vs. efektivní sazba Fedu. COT dolaru = CFTC TFF „USD INDEX - ICE“,
-  skupina leveraged funds (přesně ta, kterou čte metodika).
+  skupina leveraged funds.
 - **Historie skóre se rekonstruuje se zpožděním zveřejnění.** Každá řada FRED
   má svůj typický odstup zveřejnění; zpětný bod smí použít jen data, která už
-  byla venku. Rok historie se dopočítá při prvním spuštění, později jen díry,
-  kdy aplikace neběžela (> 36 h). Živé body: při změně, jinak 1× za hodinu.
-  V grafu je rozlišeno „živě“ vs. „rekonstrukce“.
-- **Chybějící měsíc v datech USA (říjen 2025, shutdown).** FRED tam nemá CPI
-  ani nezaměstnanost. Meziroční změny se proto počítají podle data, ne podle
-  pozice v řadě, a jeden chybějící měsíc se překlene průměrem sousedů. Dřív
-  se tím 12měsíční změna tiše počítala za 13 měsíců.
-- **Momentum.** Změna za 24 h / 7 / 30 dní; obchodní nápad při změně ≥ 2 body
-  za 24 h; modelová situace 1 (cena v pásmu, skóre se hýbe) a 2 (divergence
-  ceny a skóre) s pevnými prahy v `momentum.py`.
-- **Pravidlo 2 hodin.** Čas FOMC = 14:00 New York přepočtený na Prahu (kvůli
-  různým přechodům na zimní čas 28. 10. = 19:00, jinak 20:00). Odpočet běží v
-  prohlížeči; po zprávě 60 min „čekej na potvrzení“.
-- **Detail události.** Frekvence, proč to trh sleduje, obvyklý vliv na dolar a
-  zlato, posledních 6 hodnot z oficiální řady FRED (CPI, NFP, PCE, HDP, PPI,
-  JOLTS, tržby, žádosti, ECI, sazba Fedu). Konsenzus trhu zdarma není → dál
-  „n/a“.
-- **Headline risk.** Klíčová slova v titulcích za 12 h + neobvykle velká
-  svíčka M15 (≥ 3× medián) + blížící se víkendové uzavření. „Vysoké“ jen při
-  svíčce nebo když o tématu píše víc zdrojů do 3 h — samotná slova často
-  chytí i nesouvisející zprávy (proto UI říká, že jde o filtr).
-- **Sezónnost 5/10/15 let ze Světové banky.** Pink Sheet (CC BY 4.0, zdarma,
-  bez klíče); odkaz se mění s každou aktualizací, proto se čte z oficiální
-  stránky. Měsíční průměry cen → vhodné na sezónnost, ne na úrovně. Dolar ze
-  stejného vzorce DXY z kurzů ECB od 1999. Stará sezónnost z PAXG zůstává.
-- **DXY: úrovně, filtr, zrcadlo, koš.** Úrovně z denních svíček DXY stejnou
-  metodou jako u zlata; zrcadlo = zlato do 0,8 % od rezistence/supportu a DXY
-  do 0,35 % od opačné úrovně, jen při záporné korelaci.
-- **Metodika v aplikaci.** Stránka „Metodika“ čte složku jen lokálně (název,
-  velikost, SHA-256 — nic se nikam neposílá). Seznam zapracovaných souborů:
-  `backend/app/data/metodika.json`; nový nebo změněný soubor se ukáže jako
-  „nový — zatím nezapracováno“.
+  byla venku.
+- **Chybějící měsíc v datech USA (říjen 2025, shutdown).** Meziroční změny se
+  počítají podle data, ne podle pozice v řadě, a jeden chybějící měsíc se
+  překlene průměrem sousedů.
+- **Sezónnost 5/10/15 let ze Světové banky** (Pink Sheet, CC BY 4.0) a
+  **denní zlato od 2013 z NBP** (api.nbp.pl, cena v PLN/g × kurz USD/PLN →
+  USD/oz; ověřeno 16. 10. 2026 = 4 164 $, spot ~4 160 $). Sezónní okno se
+  zmíní, jen když jde ≥ 7 z 10 let stejným směrem a průměr je aspoň 1 %.
+- **COT u zlata:** commercials a open interest (3letý index ≥ 90 / ≤ 10 přidá
+  ±1 do kategorie COT). `tra.MODEL_VERSION = 2` — historie se přepočítala.
 
-## Modul 7 — Pomocník podle videa o swingové strategii (2026-10-17)
+## Modul 8 — všechny trhy, jednodušší, mobil (2026-10-31)
 
-Uživatel poslal přepis videa o swingové strategii Funded Mind (autor Trading
-Analyzeru) a sedm PDF. Všechna PDF jsou bajt po bajtu stejná jako ta už
-zapracovaná (ověřeno SHA-256). Video přineslo nové prvky. Zároveň uživatel
-chtěl „víc zjednodušit, ať nemusím nic hledat, má to být můj pomocník“ a
-výrazně posunout design.
+Zadání uživatele: přehled trhů se skóre −10 až +10 a detailem s argumenty,
+riziky, „co dál sledovat“ a retail sentimentem; zrušit korelace; mnohem
+jednodušší; mobilní aplikace pro obchodování ve vlaku a ve škole. Vše zdarma.
 
-- **Hlavní obrazovka = Pomocník.** Odpověď jednou větou, checklist setupu,
-  obchodní plán (vstup, SL, cíl, R:R), graf se zónami, plán na týden a šest
-  dlaždic s odkazem do detailu. Původní přehled trhů je na `#/trhy` (odkaz
-  dole), detailní rozbor zlata zůstal celý. Panel „Denní rutina“ z rozboru
-  nahradil checklist v Pomocníku.
-- **Supply/demand zóny (týdenní → denní).** Zóna = malá základna před
-  prudkým pohybem (≥ 1,25× ATR během 1–3 svíček), platí, dokud ji
-  DOKONČENÁ svíčka neprorazí závěrem. Denní zóna uvnitř týdenní = upřesnění.
-  Pevná pravidla v `app/market/zones.py`, ATR(14) daného timeframu.
-- **Objem → čas na ceně (TPO).** Video čte objem z futures (POC). Objem
-  futures zdarma ani legálně bez registrace k dispozici není, proto profil
-  času na ceně ze svíček. V aplikaci je to vždy napsané.
-- **Checklist a známka.** Šest bodů (týdenní zóna, denní zóna, aktivita,
-  skóre, COT, sezónnost). A+ = 6/6, A = 5/6, B = 4/6, C = méně nebo zóna
-  bez aktivity. „Nech být“, když skóre, COT i sezónnost jdou proti (věta z
-  videa). Načasování navíc: 2 h před červenou zprávou a víkend.
-- **Plán.** Vstup na hraně zóny, SL za vzdálenou hranou + 0,25× denní ATR,
-  cíl = nejbližší protější zóna. Je to plán podle pravidel, ne doporučení.
-- **COT u zlata: commercials a open interest.** Podle videa se u komodit
-  čtou commercials (producenti a banky se zajišťují). 3letý index ≥ 90 / ≤ 10
-  přidá ±1 do kategorie COT. Pokles open interestu o ≥ 3 % za 4 týdny
-  oslabí tok fondů o jeden stupeň (zavírání pozic). Kvůli změně pravidel
-  `tra.MODEL_VERSION = 2`: uložená historie skóre se přepočítá celá novými
-  pravidly, aby graf nemíchal dva modely.
-- **Denní zlato od 2013 z NBP.** Pro sezónní okna („od 11. 9. do 9. 10.“)
-  jsou potřeba denní data za 10 let. Bundesbank řadu zlata v USD už nemá,
-  Kraken má 2 roky. Polská centrální banka (api.nbp.pl, veřejné API bez
-  klíče) publikuje cenu zlata v PLN/g; s kurzem USD/PLN téhož dne → USD/oz.
-  Ověřeno: 16. 10. 2026 = 4 164 $, spot ~4 160 $. Historie se ukládá do
-  `backend/cache/` a dál se stahují jen nové dny.
-- **Sezónní okna.** Stejné kalendářní dny v posledních 10 letech, okna 14–42
-  dní začínající do 3 týdnů. Zmíní se, jen když jde ≥ 7 z 10 let stejným
-  směrem a průměr je aspoň 1 % (u dolaru 0,5 %). Linka „15 let“ se ukáže jen
-  při skutečných ~15 letech dat (u zlata z NBP je jen 13).
-- **Design.** Panely s nasvíceným okrajem, nová navigace s ikonami, hero
-  s barvou podle směru, prstenec potvrzení, cenový žebřík plánu, zóny přímo
-  v grafu. Animace respektují „omezit pohyb“.
-
-## Modul 8 — Market Intelligence: všechny trhy, jednodušší, mobil (2026-10-31)
-
-Zadání uživatele: platforma jako „Market Intelligence“ od ForexNation (seznam
-trhů se skóre −10 až +10, detail s argumenty, riziky, „co dál sledovat“, retail
-sentiment) + to, co už máme; zrušit korelace; mnohem jednodušší; mobilní
-aplikace pro obchodování ve vlaku a ve škole. Vše zdarma.
-
-- **Pět trhů:** XAU/USD, EUR/USD, GBP/USD, USD/JPY, ropa WTI. Hlavní obrazovka
-  = přehled (seznam + detail vybraného), detail trhu = skóre, argumenty pro,
-  protiargumenty a rizika, co dál sledovat, retail sentiment, rozpis skóre,
-  graf, zprávy. Zlato si nechává skóre Funded Mind (±25 → přepočet na ±10) a
-  obchodní plán (Pomocník je teď v menu „Zlato“).
+- **Pět trhů:** XAU/USD, EUR/USD, GBP/USD, USD/JPY, ropa WTI. Zlato má
+  11kategoriové skóre (±25 → přepočet na ±10).
 - **Model měnových párů (±10):** sazby ±3 (změna rozdílu 2letých výnosů za 3
   měsíce + očekávání z 2Y vs. sazba centrální banky), inflace ±2, HDP ±2, trh
   práce ±1, COT leveraged funds ±1, sezónnost ±1. Kategorie bez dat se
@@ -331,18 +253,45 @@ aplikace pro obchodování ve vlaku a ve škole. Vše zdarma.
 - **Kalendář všech měn:** export ForexFactory „this week“ (JSON s prognózami,
   robots povoluje, stahujeme max. 1× za hodinu, historie 60 dní v
   `backend/cache/`). Další týdny: oficiální termíny Fedu, ECB, BoE a BoJ
-  (`app/market/central_banks.py`, zkopírováno z jejich stránek 31. 10.) a
-  kalendář dat USA. Názvy událostí přes slovník do češtiny; strojový překlad
-  krátkých názvů byl nečitelný, neznámé zůstávají anglicky.
+  (`app/market/central_banks.py`) a kalendář dat USA. Názvy událostí přes
+  slovník do češtiny; neznámé zůstávají anglicky.
 - **Retail sentiment = malí obchodníci z CFTC** (non-reportable). Brokerská
-  data (Myfxbook, IG, DXM) zdarma bez registrace a bez scrapování nejsou.
-  Sentiment neovlivňuje skóre, jen ho komentuje (kontrariánsky).
-- **Zrušeno na přání uživatele:** korelace (výpočet i panely), záložka DXY,
-  původní přehled trhů s „připravujeme“, ticker S&P/VIX/ropa z FRED, Bitcoin.
+  data zdarma bez registrace a bez scrapování nejsou. Sentiment neovlivňuje
+  skóre, jen ho komentuje.
 - **Mobil:** stejná webová aplikace jako PWA (manifest, ikona, offline přes
-  service worker). Statický snímek všech API odpovědí
+  service worker). Statický snímek API odpovědí
   (`python -m app.export_static <složka> --cycle`) + build s `VITE_STATIC=1`
   běží bez serveru; živé ceny bere telefon přímo z Krakenu (CORS povoleno).
   Hosting zdarma: GitHub Actions + GitHub Pages (`.github/workflows/mobil.yml`,
-  každých 30 minut). Vyžaduje bezplatný účet uživatele na GitHubu a veřejný
-  repozitář — rozhoduje uživatel, nic se nezveřejňuje bez jeho souhlasu.
+  každých 30 minut), veřejný repozitář se souhlasem uživatele. Do veřejného
+  repozitáře jde jen commit s autorem `tomblazejj-ai` (noreply), nikdy lokální
+  historie s e-mailem.
+
+## Modul 9 — světlý vzhled, bez osobní strategie (2026-10-31)
+
+Zadání uživatele: změnit název (ten starý už používá jiná platforma), světlejší
+a animovanější vzhled, méně informací — hlavní věci (fundament, zprávy, co může
+trh ovlivnit) hned nahoře; **žádná jeho obchodní strategie**; technický výhled
+jen z veřejných webů zdarma.
+
+- **Název:** 31. 10. krátce „Směrovka“, od 1. 11. podle zadání uživatele „FTI – Financial Trading Intelligence“.
+- **Úvod:** odpočet do další důležité zprávy → dlaždice trhů (ručičkový
+  ukazatel skóre, směr, jedna věta proč) → „Co hýbe trhy“ (5 nejdůležitějších
+  zpráv) a „Co může trh ovlivnit“ (4 nejbližší zprávy s vysokým dopadem).
+  Menu má jen Přehled, Kalendář a Zprávy. Detail trhu: proč (3 důvody + co
+  jde proti), co může trh ovlivnit, technický výhled z veřejných zdrojů,
+  zprávy, graf; drobní obchodníci a rozpis skóre jsou dole, rozpis sbalený.
+- **Odstraněno vše, co patřilo ke strategii uživatele:** obchodní plán, zóny,
+  checklist, stránka s materiály, pravidlo „nevstupovat před zprávou“ a
+  týdenní plán — kód, dokumentace i stránky. Z veřejného repozitáře zmizela i
+  historie — zveřejněný je jediný nový commit bez předků.
+- **Technický výhled = převzaté titulky s odkazem**, ne náš výpočet: oficiální
+  RSS kanály Investing.com (technická analýza měn, komodit, trhů), FXEmpire
+  (prognózy) a FXStreet (analýzy). U každého zdroj a čas; anglické titulky
+  strojově přeložené a označené. FXStreet blokuje servery GitHubu (403), takže
+  v mobilní verzi chybí; na PC funguje.
+- **Vzhled:** světlý podklad, bílé karty, jemné animace (postupné vyjetí karet,
+  ručička ukazatele, vykreslení grafu, pulzující živá tečka, záblesk při změně
+  ceny); „omezit pohyb“ v systému animace vypne.
+- **Mobil:** service worker bere stránku a data nejdřív ze sítě, takže nová
+  verze se ukáže hned při dalším otevření; offline zůstávají poslední data.

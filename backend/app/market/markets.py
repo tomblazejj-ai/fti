@@ -1,9 +1,10 @@
-"""Market overview: one card + detail per instrument (Market Intelligence style).
+"""Market overview: one card + detail per instrument.
 
 For each instrument: fundamental score −10 … +10 with bias, what supports the direction,
 what speaks against it, what to watch next (calendar), retail positioning (CFTC small
-traders, contrarian), COT, seasonality and trend. Gold keeps the full Funded Mind score
-(±25, scaled to ±10 here) and its trading plan.
+traders, contrarian), the latest news and TECHNICAL OUTLOOKS PUBLISHED BY PUBLIC PORTALS
+(Investing.com, FXEmpire, FXStreet) — the app has no trading strategy of its own.
+Gold's score uses the 11-category fundamental model in tra.py (±25), scaled to ±10.
 """
 
 from __future__ import annotations
@@ -37,6 +38,10 @@ NEWS_TAGS = {
     "USOIL": r"\boil\b|\bcrude\b|\bopec\b|\bwti\b|\bbrent\b|\bropa\b|\bropy\b",
 }
 USD_NEWS = r"\bfed\b|\bfomc\b|\bpowell\b|\bdollar\b|\btreasur|\binflation\b|\bpayrolls?\b|\bdolar"
+ANY_MARKET = re.compile("|".join(NEWS_TAGS.values()) + "|" + USD_NEWS, re.IGNORECASE)
+TECH_WORDS = re.compile(r"\b(technical|forecast|outlook|support|resistance|breakout|breakdown|pattern|trend ?line|double (top|bottom)|"
+                        r"head and shoulders|wedge|triangle|fibonacci|elliott|price analysis|price prediction|key level)\b|"
+                        r"\btechnick|\bpodpor|\brezistenc|\bformac", re.IGNORECASE)
 
 
 def _num(v: float, digits: int = 1, signed: bool = False) -> str:
@@ -124,13 +129,27 @@ def small_traders(rows: list[dict] | None, long_key: str = "small_long", short_k
     return pct[-1], round(pct[-1] - pct[-5], 1), rows[-1]["date"]
 
 
+def is_technical(h: dict) -> bool:
+    from app.connectors.portals import TECHNICAL_SOURCES
+
+    return h.get("source") in TECHNICAL_SOURCES or bool(TECH_WORDS.search(f"{h.get('title_en') or ''} {h.get('title') or ''}"))
+
+
+def technical_outlooks(headlines: list[dict], code: str, limit: int = 4) -> list[dict]:
+    """Technical analyses of this market written by public portals (newest first)."""
+    own = re.compile(NEWS_TAGS[code], re.IGNORECASE)
+    hits = [h for h in headlines if is_technical(h) and own.search(f"{h.get('title_en') or ''} {h.get('title') or ''}")]
+    hits.sort(key=lambda h: h["published_at"], reverse=True)
+    return [{k: h.get(k) for k in ("title", "source", "url", "published_at", "translated")} for h in hits[:limit]]
+
+
 def instrument_news(headlines: list[dict], code: str, limit: int = 5) -> list[dict]:
     rx = re.compile(NEWS_TAGS[code] + ("|" + USD_NEWS if code != "USOIL" else ""), re.IGNORECASE)
     own = re.compile(NEWS_TAGS[code], re.IGNORECASE)
     hits = []
     for h in headlines:
         text = f"{h.get('title_en') or ''} {h.get('title') or ''}"
-        if rx.search(text):
+        if rx.search(text) and not is_technical(h):
             hits.append((0 if own.search(text) else 1, h))
     ordered = [h for _, h in sorted(hits, key=lambda x: (x[0], -dt.datetime.fromisoformat(x[1]["published_at"]).timestamp()))]
     return [{k: h.get(k) for k in ("title", "source", "url", "published_at", "translated")} for h in ordered[:limit]]
@@ -147,7 +166,7 @@ def card(inst: dict, result: dict, price: dict | None, trend: str | None, extra:
 
 
 def gold_result(tra: dict | None) -> dict | None:
-    """The Funded Mind score (±25) in the same shape as the FX/oil results, scaled to ±10."""
+    """The 11-category fundamental score (±25) in the same shape as the FX/oil results, scaled to ±10."""
     xau = (tra or {}).get("xau")
     if not xau:
         return None
@@ -194,10 +213,37 @@ def build(ctx: dict, now: dt.datetime) -> dict:
         watch = watch_list(ctx.get("events") or [], inst["currencies"], now, days=10,
                            extra=r"crude|oil|inventor" if inst["kind"] == "oil" else None)
         extra = {"retail": retail, "watch": watch, "change_text": _change_text(watch, code),
-                 "news": instrument_news(ctx.get("headlines") or [], code)}
-        if code == "XAUUSD" and ctx.get("gold_extra"):
-            extra["gold"] = ctx["gold_extra"]
+                 "news": instrument_news(ctx.get("headlines") or [], code),
+                 "technical": technical_outlooks(ctx.get("headlines") or [], code)}
         cards.append(card(inst, res, (ctx.get("prices") or {}).get(code), (ctx.get("trends") or {}).get(code), extra))
     return {"computed_at": now.isoformat(), "markets": cards, "errors": ctx.get("errors", []),
-            "method": ("Skóre −10 až +10 skládají pevná pravidla z oficiálních dat zdarma (ECB, ONS, FRED, MOF, EIA, CFTC). "
-                       "Zlato používá skóre metodiky Funded Mind (±25) přepočtené na ±10. Není to investiční doporučení.")}
+            "highlights": highlights(ctx.get("key_news") or [], cards),
+            "next_events": next_events(ctx.get("events") or [], now),
+            "method": ("Skóre −10 až +10 skládají pevná pravidla z oficiálních dat zdarma (ECB, Eurostat, ONS, FRED, MOF, EIA, CFTC). "
+                       "Technické výhledy jsou články veřejných portálů. Není to investiční doporučení.")}
+
+
+def highlights(key_news: list[dict], cards: list[dict], limit: int = 5) -> list[dict]:
+    """What moves the markets right now: the strongest gold-relevant news + the newest news of
+    every other market, without duplicates, newest first."""
+    seen, out = set(), []
+    pool = [{**n, "market": "XAUUSD"} for n in key_news[:3]]
+    for c in cards:
+        pool += [{**n, "market": c["code"]} for n in c.get("news", [])[:2]]
+    for n in pool:
+        key = re.sub(r"[^a-z0-9]+", "", (n.get("title") or "").lower())[:50]
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({k: n.get(k) for k in ("title", "source", "url", "published_at", "translated", "market", "impact")})
+    out.sort(key=lambda n: n["published_at"], reverse=True)
+    return out[:limit]
+
+
+def next_events(events: list[dict], now: dt.datetime, limit: int = 4) -> list[dict]:
+    soon = [e for e in events if e["impact"] == 3 and dt.datetime.fromisoformat(e["datetime"]) >= now - dt.timedelta(minutes=30)
+            and e["currency"] in ("USD", "EUR", "GBP", "JPY")]
+    soon.sort(key=lambda e: e["datetime"])
+    return [{"datetime": e["datetime"], "when": _when(e["datetime"], e.get("timed", True)), "currency": e["currency"],
+             "title": e.get("title_cs") or e["title_en"], "forecast": e.get("forecast"), "previous": e.get("previous")}
+            for e in soon[:limit]]

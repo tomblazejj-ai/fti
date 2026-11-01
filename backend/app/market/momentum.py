@@ -1,4 +1,4 @@
-"""Score momentum — "Skóre = makro kompas, momentum = jeho směr" (Funded Mind, TrA Score Momentum).
+"""Score momentum — how fast and which way the fundamental score moves.
 
 From the stored score history and the daily price:
   * changes over 24 h / 7 days / 30 days ("sleduju rychlost, ne hodnotu")

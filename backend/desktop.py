@@ -49,7 +49,7 @@ def main() -> None:
             time.sleep(0.25)
 
     webview.create_window(
-        "Fundamentální obchodní přehled",
+        "FTI – Financial Trading Intelligence",
         URL,
         width=1400,
         height=900,

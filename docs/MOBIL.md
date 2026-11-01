@@ -6,7 +6,7 @@ být na internetu. Nejjednodušší cesta zdarma je GitHub:
 
 - **GitHub Actions** každých 30 minut stáhne data (stejné zdroje jako aplikace na PC)
   a připraví aktuální snímek,
-- **GitHub Pages** ho zveřejní na adrese typu `https://<jmeno>.github.io/fti/`,
+- **GitHub Pages** ho zveřejní na adrese https://tomblazejj-ai.github.io/fti/,
 - telefon si živé ceny zlata, EUR/USD a GBP/USD bere přímo z Krakenu.
 
 Co je potřeba jednou udělat (uživatel):
@@ -22,3 +22,6 @@ Co je potřeba jednou udělat (uživatel):
 
 Technicky: `.github/workflows/mobil.yml`, snímek `backend/app/export_static.py`,
 build webu s `VITE_STATIC=1`.
+
+Nová verze se v telefonu ukáže při dalším otevření aplikace (stránka se bere
+nejdřív ze sítě). Když je telefon bez signálu, ukážou se poslední stažená data.

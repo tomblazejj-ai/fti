@@ -1,23 +1,6 @@
-import type {
-  Analysis,
-  CandlesResponse,
-  DashboardResponse,
-  HistoryDetail,
-  HistoryEntry,
-  Horizon,
-  CalendarAll,
-  MarketsResponse,
-  Metodika,
-  NewsEvent,
-  ScoreSnapshot,
-  SystemStatus,
-  TickersResponse,
-  TraHistory,
-  UpcomingEvent,
-} from "./types";
+import type { CalendarAll, CandlesResponse, MarketsResponse, TickersResponse } from "./types";
 
-// Same-origin by default (the web build is served by FastAPI itself). A
-// native app would call configureApi("https://your-host") once at startup.
+// Same-origin by default (the web build is served by FastAPI itself).
 let baseUrl = "";
 
 export function configureApi(url: string): void {
@@ -40,35 +23,26 @@ export const STATIC = import.meta.env.VITE_STATIC === "1";
 const STATIC_FILES: Record<string, string> = {
   "/api/markets": "data/markets.json",
   "/api/calendar": "data/calendar.json",
-  "/api/status": "data/status.json",
-  "/api/dashboard": "data/dashboard.json",
   "/api/tickers": "data/tickers.json",
-  "/api/metodika": "data/metodika.json",
 };
 
 export function staticPath(path: string): string | null {
   const [p, q] = path.split("?");
-  const params = new URLSearchParams(q ?? "");
-  const m = p.match(/^\/api\/instruments\/([A-Z]+)\/(analysis|scores|news|candles|tra-history)$/);
-  if (m) {
-    const [, code, what] = m;
-    if (what === "candles") return `data/candles-${code}-${params.get("tf")}.json`;
-    if (what === "tra-history") return `data/tra-${code}.json`;
-    return `data/${what}-${code}.json`;
-  }
+  const m = p.match(/^\/api\/instruments\/([A-Z]+)\/candles$/);
+  if (m) return `data/candles-${m[1]}-${new URLSearchParams(q ?? "").get("tf")}.json`;
   return STATIC_FILES[p] ?? null;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string): Promise<T> {
   let response: Response;
   let url = `${baseUrl}${path}`;
   if (STATIC) {
     const file = staticPath(path);
-    if (!file || (init?.method && init.method !== "GET")) throw new ApiError(404, "V mobilní verzi tahle část není — otevři ji v aplikaci na PC.");
+    if (!file) throw new ApiError(404, "V mobilní verzi tahle část není — otevři ji v aplikaci na PC.");
     url = file;
   }
   try {
-    response = await fetch(url, STATIC ? { cache: "no-cache" } : init);
+    response = await fetch(url, STATIC ? { cache: "no-cache" } : undefined);
   } catch {
     throw new ApiError(
       0,
@@ -91,27 +65,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  dashboard: () => request<DashboardResponse>("/api/dashboard"),
-  status: () => request<SystemStatus>("/api/status"),
-  scores: (code: string) => request<Record<Horizon, ScoreSnapshot>>(`/api/instruments/${code}/scores`),
-  analysis: (code: string) => request<Analysis>(`/api/instruments/${code}/analysis`),
-  news: (code: string) => request<{ events: NewsEvent[]; total_events: number }>(`/api/instruments/${code}/news`),
-  upcomingEvents: () => request<{ events: UpcomingEvent[]; coverage_note: string }>("/api/events/upcoming"),
-  history: (code: string, horizon: Horizon) =>
-    request<HistoryEntry[]>(`/api/instruments/${code}/history?horizon=${encodeURIComponent(horizon)}`),
-  historyEntry: (code: string, id: number) => request<HistoryDetail>(`/api/instruments/${code}/history/${id}`),
-  tickers: () => (STATIC ? staticTickers() : request<TickersResponse>("/api/tickers")),
-  candles: (code: string, tf: string) => request<CandlesResponse>(`/api/instruments/${code}/candles?tf=${encodeURIComponent(tf)}`),
-  refresh: (code: string) => request<ScoreSnapshot>(`/api/instruments/${code}/refresh`, { method: "POST" }),
-  traHistory: async (code: string, days: number) => {
-    const h = await request<TraHistory>(`/api/instruments/${code}/tra-history?days=${days}`);
-    if (!STATIC) return h;
-    const from = Date.now() - days * 86400000;
-    return { ...h, points: h.points.filter((p) => Date.parse(p.t) >= from) };
-  },
-  metodika: () => request<Metodika>("/api/metodika"),
   markets: () => request<MarketsResponse>("/api/markets"),
   calendar: () => request<CalendarAll>("/api/calendar"),
+  tickers: () => (STATIC ? staticTickers() : request<TickersResponse>("/api/tickers")),
+  candles: (code: string, tf: string) => request<CandlesResponse>(`/api/instruments/${code}/candles?tf=${encodeURIComponent(tf)}`),
 };
 
 // Kraken's public API allows browser requests, so the phone version shows live prices

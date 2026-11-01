@@ -1,14 +1,14 @@
 {
-  "name": "FTI – Market Intelligence",
+  "name": "FTI – Financial Trading Intelligence",
   "short_name": "FTI",
-  "description": "Fundamentální směrové hodnocení trhů: zlato, EUR/USD, GBP/USD, USD/JPY a ropa.",
+  "description": "Kam míří trhy: fundament, zprávy a kalendář pro zlato, EUR/USD, GBP/USD, USD/JPY a ropu.",
   "lang": "cs",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#070c17",
-  "theme_color": "#070c17",
+  "background_color": "#f4f6fb",
+  "theme_color": "#f4f6fb",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },

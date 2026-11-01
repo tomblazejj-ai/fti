@@ -22,7 +22,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="Fundamental Trading Intelligence API",
+    title="FTI – Financial Trading Intelligence API",
     description=(
         "Data zdarma z FRED (keyless CSV), CFTC, oficiálních RSS centrálních bank "
         "a GDELT. Žádné placené API, žádné registrace. Viz ARCHITECTURE.md."

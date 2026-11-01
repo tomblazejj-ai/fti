@@ -1,15 +1,12 @@
-"""Funded Mind / Trading Analyzer methodology: score, momentum, news rules, COT, DXY, seasonality, materials."""
+"""Fundamental score, momentum, calendar details, COT, DXY, seasonality."""
 
 import datetime as dt
-import hashlib
 import io
-import json
 import zipfile
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app import metodika
 from app.connectors import worldbank
 from app.connectors.calendar_ics import IcsEvent
 from app.connectors.kraken import Candle
@@ -237,34 +234,6 @@ def test_world_bank_pink_sheet_parser():
     assert len(data["prices"]) == 132 and data["prices"]["2010-01"] == 1006.0
 
 
-# --- materials folder ------------------------------------------------------------------------
-
-def test_metodika_marks_new_and_changed_files(tmp_path, monkeypatch):
-    folder = tmp_path / "Fundament Funded mind"
-    folder.mkdir()
-    (folder / "News.pdf").write_bytes(b"news v1")
-    (folder / "COT.pdf").write_bytes(b"cot v2")
-    (folder / "moje poznámky.txt").write_text("Sledovat NFP a mzdy.", encoding="utf-8")
-    manifest = tmp_path / "metodika.json"
-    manifest.write_text(json.dumps({"course": "Funded Mind", "principles": ["P1"], "files": [
-        {"file": "News.pdf", "sha256": hashlib.sha256(b"news v1").hexdigest(), "title": "Zprávy", "author": "DV", "summary": "s", "used_in": ["Kalendář"]},
-        {"file": "COT.pdf", "sha256": hashlib.sha256(b"cot v1").hexdigest(), "title": "COT", "author": "JS", "summary": "s", "used_in": []},
-        {"file": "Trend.pdf", "sha256": "0" * 64, "title": "Trend", "author": "JS", "summary": "s", "used_in": []},
-    ]}), encoding="utf-8")
-    monkeypatch.setattr(metodika, "MANIFEST", manifest)
-    r = metodika.scan(folder, NOW)
-    status = {f["file"]: f["status"] for f in r["files"]}
-    assert status == {"News.pdf": "done", "COT.pdf": "changed", "moje poznámky.txt": "new"}
-    assert r["counts"] == {"new": 1, "changed": 1, "done": 1} and r["missing"] == ["Trend.pdf"]
-    assert next(f for f in r["files"] if f["status"] == "new")["preview"] == "Sledovat NFP a mzdy."
-
-
-def test_bundled_manifest_covers_the_course_files():
-    m = metodika.load_manifest()
-    assert len(m["files"]) == 20 and all(len(f["sha256"]) == 64 and f["used_in"] for f in m["files"])
-    assert m["principles"]
-
-
 # --- stored history + API --------------------------------------------------------------------
 
 def test_score_points_are_stored_on_change_and_served(db_session):
@@ -283,7 +252,6 @@ def test_score_points_are_stored_on_change_and_served(db_session):
         assert [p["total"] for p in body["points"]] == [-6, -4]
         assert client.get("/api/instruments/DXY/tra-history").status_code == 200
         assert client.get("/api/instruments/EURUSD/tra-history").status_code == 404
-        assert client.get("/api/metodika").status_code == 200
     finally:
         app.dependency_overrides.clear()
 

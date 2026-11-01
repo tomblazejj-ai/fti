@@ -5,7 +5,7 @@ the price of 1 g of gold in PLN every business day; with NBP's USD/PLN mid rate 
 same day it converts to USD per troy ounce. Checked live 2026-10-17: 16. 10. 2026 →
 519,85 PLN/g ÷ 3,8827 PLN/USD × 31,1035 = 4 164 $/oz (spot ~4 160 $).
 
-Used for the DAILY seasonality windows (the strategy compares e.g. "11. 9. – 9. 10."
+Used for the DAILY seasonality windows (e.g. "11. 9. – 9. 10."
 over the last 5–10 years). Kraken PAXG has only ~2 years of daily candles and the
 World Bank only monthly averages.
 

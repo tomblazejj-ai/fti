@@ -1,8 +1,7 @@
-"""Fundamental score of a currency pair, −10 … +10 (Market Intelligence style).
+"""Fundamental score of a currency pair, −10 … +10 (the overview cards).
 
 Every category compares the two currencies of the pair; positive = the first currency
-(EUR in EUR/USD) should be stronger. Weights follow what moves FX in the Funded Mind
-material (rates and inflation first) and add up to 10:
+(EUR in EUR/USD) should be stronger. Rates and inflation weigh most, as they move FX most and add up to 10:
 
     category        range   from
     Úrokové sazby    ±3     change of the 2-year yield gap over 3 months + priced hikes/cuts

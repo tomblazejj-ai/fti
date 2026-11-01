@@ -40,14 +40,7 @@ def export(out_dir: Path, run_cycle: bool = False) -> list[str]:
         "/api/markets": "markets.json",
         "/api/calendar": "calendar.json",
         "/api/status": "status.json",
-        "/api/dashboard": "dashboard.json",
         "/api/tickers": "tickers.json",
-        "/api/metodika": "metodika.json",
-        "/api/instruments/XAUUSD/analysis": "analysis-XAUUSD.json",
-        "/api/instruments/XAUUSD/scores": "scores-XAUUSD.json",
-        "/api/instruments/XAUUSD/news": "news-XAUUSD.json",
-        "/api/instruments/XAUUSD/tra-history?days=365": "tra-XAUUSD.json",
-        "/api/instruments/DXY/tra-history?days=365": "tra-DXY.json",
     }
     for code, tfs in CANDLES.items():
         for tf in tfs:

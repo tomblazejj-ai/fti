@@ -7,7 +7,7 @@ the World Bank commodity-markets page (robots.txt allows it). Checked live
 gold column headed "Gold", rows "YYYYMmm" from 1960M01 to the last full month.
 
 Values are MONTHLY AVERAGES of daily London prices — good for seasonality
-(the Funded Mind lessons look at 5/10/15-year averages), not for trading levels.
+(5/10/15-year averages), not for trading levels.
 Fetched at most once a day.
 """
 

@@ -36,7 +36,14 @@ FEEDS: list[Feed] = [
     Feed("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html", "en"),
     Feed("CNBC ekonomika", "https://www.cnbc.com/id/20910258/device/rss/rss.html", "en"),
     Feed("MarketWatch", "https://feeds.content.dowjones.io/public/rss/mw_topstories", "en"),
+    # technical outlooks published by the portals themselves (checked 2026-10-31)
+    Feed("Investing.com technika", "https://www.investing.com/rss/forex_Technical.rss", "en"),
+    Feed("Investing.com technika komodit", "https://www.investing.com/rss/commodities_Technical.rss", "en"),
+    Feed("Investing.com technika trhů", "https://www.investing.com/rss/market_overview_Technical.rss", "en"),
+    Feed("FXEmpire prognózy", "https://www.fxempire.com/api/v1/en/articles/rss/forecasts", "en"),
 ]
+TECHNICAL_SOURCES = {"FXStreet analýzy", "Investing.com technika", "Investing.com technika komodit", "Investing.com technika trhů",
+                     "FXEmpire prognózy"}
 
 MAX_ITEMS_PER_FEED = 60
 

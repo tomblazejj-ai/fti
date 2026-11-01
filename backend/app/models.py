@@ -165,7 +165,7 @@ class AnalysisSnapshot(Base):
 
 
 class TraScorePoint(Base):
-    """History of the Funded Mind / Trading Analyzer style score (app/market/tra.py).
+    """History of the fundamental score (app/market/tra.py).
     "live" points are stored while the app runs (on change, at least hourly);
     "backfill" points were rebuilt from historical data (lag-aware) so the
     score-momentum chart is useful from day one."""

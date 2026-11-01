@@ -445,13 +445,6 @@ def get_tra_history(code: str, days: int = 365, session: Session = Depends(get_s
     }
 
 
-@router.get("/metodika")
-def get_metodika():
-    """Funded Mind materials in the trader's folder and whether they are worked into the app (local read only)."""
-    from app import metodika
-
-    return metodika.scan()
-
 
 def _daily_line(code: str, tf: str):
     """USD/JPY (ECB daily fixing) and WTI (FRED daily): closing prices only, drawn as a line."""

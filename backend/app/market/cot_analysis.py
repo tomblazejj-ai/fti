@@ -147,10 +147,7 @@ def analyze(history: list[dict], now: dt.datetime | None = None, source: str = "
     }
 
 
-# Funded Mind video on the swing strategy: for currencies the large speculators matter, "u komodit
-# jako je zlato, stříbro nebo platina se dívám na commercial stranu" — the firms that use the metal
-# and hedge it. Gold commercials are always net short; the 3-year COT index says how short:
-# near the top (least short in 3 years) they are buying back hedges = bullish, near the bottom bearish.
+# Gold COT: the commercials (firms that use and hedge the metal) and the open interest.
 COMM_EXTREME = 90.0
 OI_MOVE_PCT = 3.0
 
@@ -168,9 +165,9 @@ def _commercials(history: list[dict]) -> dict | None:
     extreme = None if idx is None else "bullish" if idx >= COMM_EXTREME else "bearish" if idx <= 100 - COMM_EXTREME else None
     head = f"Commercials (producenti a banky, které zlato zajišťují) mají COT index {round(idx or 0)}/100."
     if extreme == "bullish":
-        text = head + " Jsou nejméně short za 3 roky — podle metodiky signál pro růst zlata."
+        text = head + " Jsou nejméně short za 3 roky — v historii často signál pro růst zlata."
     elif extreme == "bearish":
-        text = head + " Jsou nejvíc short za 3 roky — podle metodiky signál pro pokles zlata."
+        text = head + " Jsou nejvíc short za 3 roky — v historii často signál pro pokles zlata."
     else:
         text = head + " Bez extrému."
     return {"net": comm[-1], "change_4w": comm[-1] - comm[-5] if len(comm) >= 5 else None,
@@ -192,7 +189,7 @@ def _open_interest(history: list[dict]) -> dict | None:
     return {"last": oi[-1], "change_4w_pct": round(ch, 1), "state": state, "text": text}
 
 
-# --- Long / short split (Funded Mind, "COT report"): how big a share of a group's positions
+# --- Long / short split: how big a share of a group's positions
 # is long vs. short, sudden changes within one report, extremes and divergence with price.
 SHARP_CHANGE_PP = 8.0  # long share moved this much within ONE weekly report
 EXTREME_INDEX = 90.0  # long share in the top / bottom 10 % of its 3-year range
@@ -261,7 +258,7 @@ def long_short_view(history: list[dict], long_key: str, short_key: str, prices: 
 
 
 USD_GROUPS = [
-    ("lev", "Hedgeové fondy (leveraged funds)", "Spekulují na směr dolaru — na tuhle skupinu se dívá metodika."),
+    ("lev", "Hedgeové fondy (leveraged funds)", "Spekulují na směr dolaru — nejsledovanější skupina u měn."),
     ("am", "Správci aktiv (asset managers)", "Penzijní a investiční fondy — pomalejší, dlouhodobé pozice."),
     ("dealer", "Banky a dealeři", "Protistrana klientů; obvykle stojí proti fondům."),
     ("small", "Malí obchodníci", "Pozice pod hranicí hlášení — retail."),

@@ -1,13 +1,12 @@
-"""Headline risk (Funded Mind, "Headline risk"): unexpected news that is NOT in the calendar —
+"""Headline risk: unexpected news that is NOT in the calendar —
 political statements (tariff threats), war/attacks/sanctions, big bankruptcies, sudden
 central-bank moves, crises. Reaction is instant and often exaggerated; liquidity disappears,
-gaps and false breaks happen. Protection: controlled risk, no positions over the weekend or
-big events, don't panic — "headline není signál".
+gaps and false breaks happen.
 
 What the app can see without paid feeds:
   * matching headlines in the last hours of the news feed (keyword rules below)
   * an abnormal price candle (M15 range far above its usual size) — the market reacting
-  * the approaching weekend close (rule: don't hold over the weekend)
+  * the approaching weekend close (weekend news can open the market with a gap)
 """
 
 from __future__ import annotations
@@ -86,7 +85,7 @@ def build(headlines: list[dict], m15: list[Candle], market: dict, now: dt.dateti
         hours = (closes - now).total_seconds() / 3600
         if hours <= 6:
             weekend = {"closes_at": market["closes_at"], "hours": round(hours, 1),
-                       "text": "Blíží se víkendové uzavření trhu — podle pravidel nedrž pozice přes víkend (víkendové zprávy umí otevřít trh s gapem)."}
+                       "text": "Blíží se víkendové uzavření trhu — víkendové zprávy umí otevřít trh s gapem."}
 
     recent = [i for i in items if dt.datetime.fromisoformat(i["published_at"]) >= now - dt.timedelta(hours=CLUSTER_HOURS)]
     cluster = len(recent) >= 3 and len({i["source"] for i in recent}) >= 2
@@ -102,9 +101,5 @@ def build(headlines: list[dict], m15: list[Candle], market: dict, now: dt.dateti
         "cluster": cluster,
         "note": ("Zprávy vybírá filtr podle klíčových slov — ne každá je skutečný šok. Vysoké riziko hlásíme jen při "
                  "neobvykle velké svíčce nebo když o stejném tématu píše víc zdrojů během 3 hodin."),
-        "advice": [
-            "Headline není signál — nepanikař, počkej na uklidnění a potvrzení směru.",
-            "Nepřeháněj expozici: drž kontrolovaný risk a menší pozici.",
-            "Vyhni se držení pozic přes víkend a přes významné události.",
-        ],
+        "advice": [],
     }

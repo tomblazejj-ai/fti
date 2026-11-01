@@ -126,10 +126,10 @@ def build(payload: dict, macro: dict, now: dt.datetime, market_open: bool) -> li
     rows.append(_row("season", "Sezónnost", "Kraken PAXG/USD týdenní", "týdně", f"{s['years_from']}–{s['years_to']}" if s else None,
                      "ok" if s else "missing", "Jen ~7 let historie." if s else ""))
 
-    # --- Funded Mind methodology and the assistant (2026-10)
+    # --- fundamental score and the extra data sets (2026-10)
     tra = payload.get("tra") or {}
     xau = tra.get("xau") or {}
-    rows.append(_row("tra", "Skóre podle metodiky (11 kategorií)", "FRED, CFTC, Světová banka, Kraken — výpočet aplikace",
+    rows.append(_row("tra", "Fundamentální skóre (11 kategorií)", "FRED, CFTC, Světová banka, Kraken — výpočet aplikace",
                      "každých 5 minut · makro data měsíčně", tra.get("as_of"), "ok" if xau and not xau.get("missing") else
                      "late" if xau else "missing",
                      f"Bez dat: {', '.join(xau['missing'])}." if xau.get("missing") else ""))
@@ -143,8 +143,4 @@ def build(payload: dict, macro: dict, now: dt.datetime, market_open: bool) -> li
     rows.append(_row("season_daily", "Sezónní okna (denní zlato)", "Narodowy Bank Polski — denní cena zlata od 2013", "denně",
                      (sd or {}).get("last_date"), "ok" if sd else "missing",
                      "Přepočet z PLN/g kurzem USD/PLN téhož dne." if sd else ""))
-    z = payload.get("zones")
-    rows.append(_row("zones", "Supply/demand zóny (týdenní a denní)", "Kraken PAXG/USD — výpočet aplikace", "každých 5 minut",
-                     now.isoformat() if z else None, "ok" if z else "missing",
-                     "Aktivita v zóně = čas strávený na ceně (objem z futures není zdarma)." if z else ""))
     return rows
