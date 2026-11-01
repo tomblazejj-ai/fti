@@ -349,6 +349,33 @@ def _fetch(provider: str, symbol: str, tf: str, inst: universe.Instrument) -> tu
     raise FeedError(f"Neznámý zdroj {provider}")
 
 
+_last_trade: dict[str, tuple[float, float | None]] = {}
+
+
+def kraken_last_trade(symbol: str) -> float | None:
+    """Unix time of the last real trade on Kraken (exact). None when unknown."""
+    hit = _last_trade.get(symbol)
+    if hit and time.monotonic() - hit[0] < 30:
+        return hit[1]
+    t = None
+    try:
+        with httpx.Client(timeout=15.0, headers={"User-Agent": "FTI/1.0 (personal analysis)"}) as c:
+            body = c.get("https://api.kraken.com/0/public/Trades", params={"pair": symbol, "count": 1}).json()
+        rows = next((v for k, v in (body.get("result") or {}).items() if k != "last"), None)
+        if rows:
+            t = float(rows[-1][2])
+    except Exception:  # noqa: BLE001 — unknown, never guessed
+        t = None
+    _last_trade[symbol] = (time.monotonic(), t)
+    return t
+
+
+REFERENCE_KINDS = ("fixing_daily", "reference_daily", "monthly_avg")
+# the official closing time of a daily value, when the market's calendar defines it
+CLOSE_TIME = {"us_cash": ((16, 0), "America/New_York"), "tse": ((15, 30), "Asia/Tokyo"), "xetra": ((17, 30), "Europe/Berlin"),
+              "lse": ((16, 30), "Europe/London")}
+
+
 def feed_identity(provider: str, inst: universe.Instrument) -> dict:
     """What this feed's numbers really are for this instrument (product, venue, proxy or not)."""
     kind, rhythm = FEED_KIND[provider]
@@ -374,7 +401,7 @@ def feed_identity(provider: str, inst: universe.Instrument) -> dict:
 
 
 def _quality(provider: str, inst: universe.Instrument, bars: list[Bar], tf: str, now: dt.datetime,
-             market: dict | None = None) -> tuple[dict, bool, str, dict]:
+             market: dict | None = None, feed_symbol: str | None = None) -> tuple[dict, bool, str, dict]:
     """(quality label, proxy, kind, last quote) of a bar set, judged against the market state:
     an OPEN market whose last bar is old means the source stopped → STALE; a closed market shows
     the last real quote as HISTORICAL with its time, never as a current tradable price."""
@@ -388,9 +415,29 @@ def _quality(provider: str, inst: universe.Instrument, bars: list[Bar], tf: str,
     last = bars[-1][0]
     tf_s = TF_MINUTES[tf] * 60
     trading = market.get("state") == market_hours.OPEN
+    time_verified = False
     if rhythm == "tick":
         bar_end = min(last + tf_s, now.timestamp())
-        if trading and now.timestamp() - last <= 2 * tf_s + 120:
+        trade_t = kraken_last_trade(feed_symbol) if provider == "kraken" and feed_symbol else None
+        if trade_t is not None:
+            # the exact time of the last real trade decides freshness — not the bar the API returns
+            time_verified = True
+            age = now.timestamp() - trade_t
+            if trading and age <= max(900, 2 * 60 * min(TF_MINUTES[tf], 15)):
+                q, quote_t = quality.classify(now, now, "tick", proxy=proxy), dt.datetime.fromtimestamp(trade_t, dt.timezone.utc)
+                q = {**q, "text": f"Poslední obchod {market_hours.prague(quote_t)}."}
+            elif trading:
+                quote_t = dt.datetime.fromtimestamp(trade_t, dt.timezone.utc)
+                q = quality.classify(quote_t, now, "tick", proxy=proxy)
+                q = {**q, "status": quality.STALE, "label": quality.LABELS_CS[quality.STALE],
+                     "text": f"Trh je otevřený, ale poslední obchod byl {market_hours.prague(quote_t)} — data jsou zastaralá."}
+            else:
+                quote_t = dt.datetime.fromtimestamp(trade_t, dt.timezone.utc)
+                q = quality.classify(quote_t, now, "weekly", proxy=proxy)
+                q = {**q, "status": quality.PROXY if proxy else quality.HISTORICAL,
+                     "label": quality.LABELS_CS[quality.PROXY if proxy else quality.HISTORICAL],
+                     "text": f"{market.get('label', 'Trh zavřen').capitalize()} — poslední obchod {market_hours.prague(quote_t)}."}
+        elif trading and now.timestamp() - last <= 2 * tf_s + 120:
             q, quote_t = quality.classify(now, now, "tick", proxy=proxy), now  # the forming bar keeps updating
         elif trading:
             q = quality.classify(dt.datetime.fromtimestamp(bar_end, dt.timezone.utc), now, "tick", proxy=proxy)
@@ -405,14 +452,34 @@ def _quality(provider: str, inst: universe.Instrument, bars: list[Bar], tf: str,
                  "text": f"{market.get('label', 'Trh zavřen').capitalize()} — poslední kotace {market_hours.prague(quote_t)}."}
     else:
         quote_t = dt.datetime.fromtimestamp(last, dt.timezone.utc)
+        cal = market_hours.calendar_for(inst)
+        if kind == "fixing_daily":  # ECB reference rates are set at 14:15 Frankfurt time
+            from zoneinfo import ZoneInfo
+
+            quote_t = dt.datetime(quote_t.year, quote_t.month, quote_t.day, 14, 15, tzinfo=ZoneInfo("Europe/Berlin")).astimezone(dt.timezone.utc)
+            time_verified = True
+        elif cal in CLOSE_TIME and kind == "index_daily":
+            from zoneinfo import ZoneInfo
+
+            (hh, mm), tz = CLOSE_TIME[cal]
+            quote_t = dt.datetime(quote_t.year, quote_t.month, quote_t.day, hh, mm, tzinfo=ZoneInfo(tz)).astimezone(dt.timezone.utc)
+            time_verified = True
         q = quality.classify(quote_t, now, rhythm, proxy=proxy)
     tradable = rhythm == "tick" and trading and q["status"] not in (quality.STALE,)
-    time_cs = market_hours.prague(quote_t) if rhythm == "tick" else (
-        f"hodnota k {quote_t.day}. {quote_t.month}. {quote_t.year}" if rhythm != "monthly" else f"měsíc {quote_t.month}/{quote_t.year}")
+    reference = kind in REFERENCE_KINDS
+    if rhythm == "tick" or time_verified:
+        time_cs = market_hours.prague(quote_t)
+    elif rhythm == "monthly":
+        time_cs = f"měsíc {quote_t.month}/{quote_t.year}"
+    else:
+        time_cs = f"hodnota k {quote_t.day}. {quote_t.month}. {quote_t.year} (čas zdroj neuvádí)"
     lq = {"price": bars[-1][4], "time": quote_t.isoformat(), "time_cs": time_cs,
           "age_minutes": round((now - quote_t).total_seconds() / 60), "tradable_now": tradable,
+          "time_verified": time_verified, "reference": reference, "fetched_at": now.isoformat(),
+          "timezone": "UTC (zobrazeno v čase Prahy SEČ/SELČ)",
           "kind_cs": universe.KIND_CS.get(kind, kind),
-          "note": None if tradable else ("Referenční nebo denní hodnota, ne obchodovatelná kotace." if rhythm != "tick" else
+          "note": None if tradable else ("Referenční hodnota (fixing/průměr), ne cena trhu." if reference else
+                                         "Denní hodnota, ne aktuální kotace." if rhythm != "tick" else
                                          "Trh neobchoduje nebo zdroj stojí — poslední cena není aktuální kotace.")}
     return q, proxy, kind, lq
 
@@ -457,7 +524,7 @@ def get_bars(code: str, tf: str, now: dt.datetime | None = None, store: bool = T
         from app.data import market_hours
 
         mstate = market_hours.state(inst, now)
-        q, proxy, kind, lq = _quality(provider, inst, bars, tf, now, mstate)
+        q, proxy, kind, lq = _quality(provider, inst, bars, tf, now, mstate, symbol)
         ident = feed_identity(provider, inst)
         notes = []
         if dropped:

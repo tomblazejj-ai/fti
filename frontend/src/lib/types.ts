@@ -19,6 +19,10 @@ export interface LastQuote {
   tradable_now: boolean;
   kind_cs: string;
   note: string | null;
+  time_verified?: boolean;
+  reference?: boolean;
+  fetched_at?: string;
+  timezone?: string;
 }
 
 export interface Quote {
@@ -35,6 +39,9 @@ export interface Quote {
   kind_cs?: string;
   provider?: string;
   quote_time_cs?: string;
+  reference?: boolean;
+  time_verified?: boolean;
+  itype_cs?: string;
 }
 
 export interface MarketState {

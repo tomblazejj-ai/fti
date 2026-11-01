@@ -307,10 +307,11 @@ def get_tickers(session: Session = Depends(get_session)):
             out.append({"symbol": code, "label": q["symbol"], "price": round(q["price"], q["digits"]), "digits": q["digits"],
                         "change_pct": q["change_pct"], "source": q["source"], "provider": q["provider"],
                         "live": bool(lq.get("tradable_now")), "as_of": lq.get("time"), "quote_time_cs": lq.get("time_cs"),
-                        "market": q["market"], "proxy": q["proxy"], "kind_cs": q["kind_cs"], "quality": q["quality"]})
+                        "market": q["market"], "proxy": q["proxy"], "kind_cs": q["kind_cs"], "quality": q["quality"],
+                        "reference": q["reference"], "time_verified": bool(lq.get("time_verified")), "itype_cs": q["itype_cs"]})
         return out, missing
 
-    live, unavailable = _cached("tickers", TICKER_TTL, build)
+    live, unavailable = build()  # no separate cache: the ticker shows exactly the quote every other module shows
     live = [dict(q) for q in live]
     error = None
     instrument = session.scalar(select(Instrument).where(Instrument.code == "XAUUSD"))

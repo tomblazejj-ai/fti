@@ -65,7 +65,8 @@ export function MarketChip({ m }: { m?: MarketStateInfo | null }) {
 /** "Poslední kotace pá 30. 10. 2026 23:00 SEČ" when the price is not a live tradable quote. */
 export function LastQuoteLine({ q }: { q?: LastQuote | null }) {
   if (!q || q.tradable_now) return null;
-  return <span className="lq">poslední kotace {q.time_cs}</span>;
+  if (q.reference) return <span className="lq">referenční hodnota ({q.kind_cs}), {q.time_cs} — ne aktuální cena trhu</span>;
+  return <span className="lq">poslední kotace {q.time_cs}{q.time_verified === false ? " (čas neověřen)" : ""}</span>;
 }
 
 /** Price of a market from its own feed, with its quality label; flashes when it moves. */
@@ -80,6 +81,7 @@ export function LivePrice({ m, big = false }: { m: MarketCard; big?: boolean }) 
       {p.change !== null && <span className={`lprice-ch ${tone(p.change)}`}>{pct(p.change)}</span>}
       {p.live && <span className="live-dot" title="živá cena" aria-label="živá cena" />}
       {!big && m.price?.market && m.price.market.state !== "OPEN" && <MarketChip m={m.price.market} />}
+      {!big && m.price?.last_quote?.reference && <span className="qb qb-delayed" title={m.price.last_quote.kind_cs}>referenční</span>}
       {big && (
         <span className="lprice-meta">
           <MarketChip m={m.price?.market} /> <QualityBadge q={m.price?.quality} source={m.price?.source} />{" "}

@@ -99,6 +99,7 @@ def _no_portals_or_translation(monkeypatch):
         raise bars.FeedError("v testech se nestahuje")
 
     monkeypatch.setattr(bars, "_kraken", no_kraken_bars)
+    monkeypatch.setattr(bars, "kraken_last_trade", lambda symbol: None)  # tests set trade times explicitly
     monkeypatch.setattr(secrets, "get", lambda name: "")
 
 

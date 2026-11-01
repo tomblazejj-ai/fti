@@ -32,6 +32,7 @@ export function TickerBar() {
               {ch !== null && !closedNow && <span className={`tick-ch ${ch > 0 ? "pos" : ch < 0 ? "neg" : ""}`}>{pct(ch)}</span>}
               {closedNow && <MarketChip m={q.market} />}
               {q.proxy && <span className="tick-d" title={q.kind_cs}>proxy</span>}
+              {q.reference && <span className="tick-d" title={q.kind_cs}>referenční</span>}
               {!q.live && !closedNow && <span className="tick-d">{q.quote_time_cs ?? "denní"}</span>}
             </span>
           );

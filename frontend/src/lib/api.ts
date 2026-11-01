@@ -92,26 +92,9 @@ export const api = {
   mt5Test: () => post<{ ok: boolean; bars: number; symbol: string; broker: string; server: string }>("/api/mt5/test", {}),
 };
 
-// Kraken's public API allows browser requests, so the phone version shows live prices
-// on top of the snapshot (which is at most ~30 minutes old).
-const KRAKEN = { PAXGUSD: "PAXGUSD", EURUSD: "ZEURZUSD", GBPUSD: "ZGBPZUSD", BTCUSD: "XXBTZUSD", ETHUSD: "XETHZUSD" } as const;
-
+// The phone version shows the snapshot quotes exactly as the central price layer produced them
+// (with their real quote times). It no longer patches prices in the browser from another call:
+// that price would have had no verified quote time and would bypass the central layer.
 async function staticTickers(): Promise<TickersResponse> {
-  const snap = await request<TickersResponse>("/api/tickers");
-  try {
-    const r = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${Object.values(KRAKEN).join(",")}`);
-    const body = await r.json();
-    const result = body?.result ?? {};
-    const live = snap.live.map((q) => {
-      const key = KRAKEN[q.symbol as keyof typeof KRAKEN];
-      const row = key && q.provider === "kraken" ? result[key] : undefined;  // only refresh a quote from its own feed
-      if (!row) return q;
-      const last = Number(row.c[0]);
-      const open = Number(row.o);
-      return { ...q, price: last, change_pct: open ? Math.round((last / open - 1) * 10000) / 100 : q.change_pct };
-    });
-    return { ...snap, live, fetched_at: new Date().toISOString() };
-  } catch {
-    return snap; // offline or blocked: the snapshot prices, marked by their time
-  }
+  return request<TickersResponse>("/api/tickers");
 }

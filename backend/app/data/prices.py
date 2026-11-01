@@ -36,5 +36,6 @@ def quote(code: str, now: dt.datetime | None = None) -> dict:
         prev = d1.bars[-2][4] if (bs.tf != "D1" and last_day == today) or bs.tf == "D1" else d1.bars[-1][4]
     price = bs.last_quote["price"]
     return {**base, "available": True, "price": price, "change_pct": round((price / prev - 1) * 100, 2) if prev else None,
+            "itype": inst.itype, "itype_cs": universe.ITYPE_CS.get(inst.itype, inst.itype), "reference": bs.last_quote.get("reference", False),
             "source": bs.source, "provider": bs.provider, "quality": bs.quality, "market": bs.market, "last_quote": bs.last_quote,
             "proxy": bs.proxy, "kind_cs": universe.KIND_CS.get(bs.kind, bs.kind), "tf": bs.tf, "notes": bs.notes[:2]}
