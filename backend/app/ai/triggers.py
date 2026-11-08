@@ -99,10 +99,12 @@ def jobs(session, now: dt.datetime) -> list[dict]:
         hit = trade_reason(new.payload, old.payload, new.computed_at, old.computed_at)
         today = now.replace(hour=0, minute=0, second=0, microsecond=0)
         made = session.query(AnalysisRecord).filter(AnalysisRecord.kind == "ai_trade", AnalysisRecord.created_at >= today).count()
-        if not hit and (new.payload.get("market") or {}).get("open"):
+        if not hit:
             last = session.query(AnalysisRecord).filter(AnalysisRecord.kind == "ai_trade").order_by(AnalysisRecord.created_at.desc()).first()
             last_at = last.created_at.replace(tzinfo=UTC) if last and last.created_at.tzinfo is None else (last.created_at if last else None)
-            if last_at is None or now - last_at >= dt.timedelta(hours=TRADE_REFRESH_HOURS):
+            if last_at is None:
+                hit = ("normal", "první analýza")  # none exists yet (a new cloud database): make one even with the market closed
+            elif (new.payload.get("market") or {}).get("open") and now - last_at >= dt.timedelta(hours=TRADE_REFRESH_HOURS):
                 hit = ("normal", "pravidelná aktualizace (trh otevřený)")
         if hit and made < TRADE_PER_DAY:
             out = [j for j in out if not (j["task"] == "change" and j.get("code") in TRADE_CODES)]  # the analysis explains it

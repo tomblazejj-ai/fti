@@ -25,6 +25,8 @@ export interface Env {
   ASSETS: Fetcher;
   SYNC_TOKEN?: string;
   GITHUB_REPO?: string; // e.g. "tomblazejj-ai/fti" — whose GitHub Actions may write
+  GITHUB_DISPATCH_TOKEN?: string; // secret: starts the cloud run every 30 minutes (./dispatch.ts)
+  GITHUB_WORKFLOW?: string;
   OIDC_AUDIENCE?: string;
 }
 

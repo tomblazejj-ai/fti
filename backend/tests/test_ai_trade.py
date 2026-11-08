@@ -316,6 +316,9 @@ def test_open_market_gets_a_fresh_analysis_every_6_hours_at_most(db_session, env
     open_["market"] = {"open": True}
     _snap(db_session, env["inst"], open_, NOW - dt.timedelta(minutes=30))
     _snap(db_session, env["inst"], open_, NOW)
+    assert triggers.jobs(db_session, NOW)[0]["reason"] == "automaticky: první analýza"
+    db_session.add(AnalysisRecord(kind="ai_trade", code="XAUUSD", created_at=NOW - dt.timedelta(hours=7), payload={}))
+    db_session.commit()
     assert triggers.jobs(db_session, NOW)[0]["reason"] == "automaticky: pravidelná aktualizace (trh otevřený)"
     db_session.add(AnalysisRecord(kind="ai_trade", code="XAUUSD", created_at=NOW - dt.timedelta(hours=2), payload={}))
     db_session.commit()

@@ -438,3 +438,29 @@ globální pravidlo pravdivosti všech instrumentů a rozpočet **0 Kč** pro ce
   Ukázka 8. 11. na kopii DB: 3 volání Groq, 16 341 tokenů, 128 s, 0 Kč, výsledek NO TRADE.
   Známá slabina: kontrola hlídá vymyšlená čísla, ne špatně přiřazená (model zaměnil korelace
   a směr výnosů) — další krok je nezávislá kontrolní role.
+- **2026-11-08 — Závazné architektonické principy (uživatel).** FTI je multi-provider:
+  pro tržní data, kalendář, zprávy, makro data i AI musí jít zapojit 10+ nezávislých
+  poskytovatelů bez přepisu jádra; zdroje se doplňují a vzájemně kontrolují, rozpory se
+  ukazují, záloha nastupuje jen při srovnatelném typu a kvalitě dat. Konkrétně: Dukascopy
+  zůstává hlavním zdrojem svíček, **TickBase je plánovaný záložní a kontrolní zdroj
+  aktuálních cen** (ne náhrada Dukascopy; zdarma 5 000 dotazů/měsíc, bez OHLC). Kalendář:
+  **Forex Factory hlavní**, **Myfxbook RSS záložní po ověření v pracovní den**, hodnoty
+  Actual z oficiálních zdrojů (FRED, BEA, ECB, Eurostat …). AI: libovolný počet
+  poskytovatelů přes AI Router, placený nikdy bez výslovného souhlasu. Implementace těchto
+  zdrojů začne až po dokončení C1 a ověření AI analýzy.
+- **2026-11-08 — C1: FTI bez PC.** Výpočet běží na GitHub Actions (veřejný repozitář,
+  zdarma): data → výpočty → AI → výsledky do Cloudflare D1 (Workers Free + D1 Free, bez
+  karty), Pages zůstává záloha. Worker `fti` na `fti.tomblazejj.workers.dev`, D1 `fti`
+  (EEUR). Zápis do D1 jen s tokenem GitHub Actions (OIDC: podpis, repozitář, větev main,
+  audience) nebo s tajnou hodnotou PC — žádné heslo ke cloudu v GitHubu. Klíč Groq jen jako
+  šifrovaný GitHub Secret. Plán GitHubu `*/30` běžel ve skutečnosti 3–5× denně (medián
+  mezery 106 min), proto Worker Cron každých 30 min spouští běh přes `workflow_dispatch`
+  (potřebuje GitHub token jen s „Actions: Read and write“ pro tento repozitář jako tajnou
+  hodnotu Workeru). Wrangler přihlášen jen se 4 oprávněními (workers_scripts:write,
+  d1:write, account:read, user:read) a po nasazení odhlášen. Podmínky GitHubu: dávka,
+  která počítá a publikuje data projektu (ne obsluha požadavků) — v souladu s „production,
+  testing, deployment, or publication“; Actions nejsou CDN ani serverless backend.
+- **2026-11-08 — Nezávislá kontrola AI** (`app/ai/check.py`, pravidla, ne AI): čísla bodu
+  musí být v citovaných údajích, hodnota u indikátoru musí patřit tomu indikátoru,
+  korelace té řadě, ke které je napsaná, a směr (roste/klesá) datům za 5 i 20 dní.
+  Chybné body se vyřadí a zaznamenají; chyba v souhrnu označí analýzu za neověřenou.

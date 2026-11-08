@@ -61,6 +61,12 @@ def compute(out: Path) -> tuple[dict, bool]:
         (data / name).write_text(text, encoding="utf-8")
     summary["files"] = len(files)
     summary["missing"] = problems[:10]
+    # what this run did, for anyone without access to GitHub's logs (never a key: only whether one is set)
+    from app.data import secrets
+
+    run_info = {"finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "ai_key_set": bool(secrets.get("GROQ_API_KEY")),
+                **{k: v for k, v in summary.items() if k != "missing"}, "missing_count": len(problems)}
+    (data / "cloud-run.json").write_text(json.dumps(run_info, ensure_ascii=False, default=str), encoding="utf-8")
     return summary, ok
 
 

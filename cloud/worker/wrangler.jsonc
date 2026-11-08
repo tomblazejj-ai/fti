@@ -18,6 +18,8 @@
     "GITHUB_REPO": "tomblazejj-ai/fti",
     "OIDC_AUDIENCE": "fti-cloud"
   },
+  // the reliable clock: every 30 minutes the Worker asks GitHub to run the FTI cycle (needs GITHUB_DISPATCH_TOKEN)
+  "triggers": { "crons": ["*/30 * * * *"] },
   "d1_databases": [
     {
       "binding": "DB",
