@@ -7,15 +7,18 @@ import datetime as dt
 import threading
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from app.data import bars as bars_mod
 from app.data import health, mt5, quality, secrets, settings_store, universe
+from app.db import get_session
 
 router = APIRouter(prefix="/api")
 _audit_cache: dict[str, tuple[float, object]] = {}
 _audit_lock = threading.Lock()
+_audit_compute = threading.Lock()
 AUDIT_TTL = 600.0
 
 
@@ -114,12 +117,18 @@ def data_audit(refresh: bool = False):
         hit = _audit_cache.get("audit")
         if hit and not refresh and time.monotonic() - hit[0] < AUDIT_TTL:
             return hit[1]
-    rows = [_audit_row(i) for i in universe.INSTRUMENTS]
-    out = {"computed_at": dt.datetime.now(dt.timezone.utc), "rows": rows,
-           "legend": {k: quality.LABELS_CS[k] for k in quality.LABELS_CS}}
-    with _audit_lock:
-        _audit_cache["audit"] = (time.monotonic(), out)
-    return out
+    asked = time.monotonic()
+    with _audit_compute:  # a second request waits for the audit being computed instead of computing it all again
+        with _audit_lock:
+            hit = _audit_cache.get("audit")
+            if hit and (hit[0] >= asked or (not refresh and time.monotonic() - hit[0] < AUDIT_TTL)):
+                return hit[1]
+        rows = [_audit_row(i) for i in universe.INSTRUMENTS]
+        out = {"computed_at": dt.datetime.now(dt.timezone.utc), "rows": rows,
+               "legend": {k: quality.LABELS_CS[k] for k in quality.LABELS_CS}}
+        with _audit_lock:
+            _audit_cache["audit"] = (time.monotonic(), out)
+        return out
 
 
 @router.get("/sources")
@@ -199,10 +208,111 @@ _test_lock = threading.Lock()
 
 
 @router.get("/ai/status")
-def ai_status():
-    from app.ai import provider
+def ai_status(session: Session = Depends(get_session)):
+    """Groq Free state (ready / paused / limit reached …), today's usage against FTI's caps, the limits
+    Groq reported, and which AI tasks have the engine inputs they need. Never the key."""
+    from app.ai import guard, provider, router, tasks
 
-    return provider.status()
+    return {**provider.status(), "groq": guard.status(session), "tasks": tasks.catalog(), "providers": router.catalog()}
+
+
+@router.post("/ai/test")
+def ai_test(session: Session = Depends(get_session)):
+    """The user's connection test: the key is checked on Groq's model list (no tokens), then one tiny
+    answer (counts as 1 of the 80 daily requests) shows the real limits of the account."""
+    from app.ai import groq, guard
+
+    model = "openai/gpt-oss-20b"
+    try:
+        guard.check(session, model, 200, "high", require_enabled=False)
+        available = groq.list_models()
+    except guard.Blocked as b:
+        return {"ok": False, "text": str(b), "until": b.until.isoformat() if b.until else None}
+    except groq.GroqError as err:
+        guard.record_failure(session, "test", model, err)
+        return {"ok": False, "text": str(err)}
+    free_ok = [m for m in groq.FREE_MODELS if m in available]
+    guard.remember_available(available)
+    try:
+        reply = groq.chat([{"role": "user", "content": "Odpověz jedním slovem: OK"}], model, 64)
+    except groq.GroqError as err:
+        guard.record_failure(session, "test", model, err)
+        return {"ok": False, "text": str(err), "models": free_ok}
+    guard.record_success(session, "test", model, reply)
+    return {"ok": True, "text": "Groq odpovídá, klíč funguje.", "models": free_ok, "seconds": round(reply.seconds, 2),
+            "limits": reply.limits, "answer": str(reply.content)[:40]}
+
+
+class AnalyzeIn(BaseModel):
+    task: str
+    code: str | None = None
+    item_id: int | None = None
+
+
+@router.post("/ai/analyze")
+def ai_analyze(body: AnalyzeIn, session: Session = Depends(get_session)):
+    """One AI analysis on request — through the same guard, cache and cooldown as the automatic ones."""
+    from app.ai import tasks
+
+    return tasks.run(session, body.task, code=(body.code or "").upper() or None, item_id=body.item_id, reason="na požádání")
+
+
+@router.get("/ai/analyses")
+def ai_analyses(code: str | None = None, task: str | None = None, limit: int = 10, session: Session = Depends(get_session)):
+    from app.ai import tasks
+
+    return {"analyses": tasks.history(session, code=code, task_id=task, limit=limit)}
+
+
+@router.get("/data/feedcheck")
+def data_feedcheck(code: str = "XAUUSD"):
+    """Long-term comparison of two independent feeds (MT5 Purple × Dukascopy) on identical timestamps."""
+    from app.connectors import dukascopy
+    from app.data import feedcheck
+
+    return {**feedcheck.summary(code.upper()), "dukascopy_downloads": dukascopy.stats()}
+
+
+@router.get("/cloud/status")
+def cloud_status():
+    """Variant A: is the sync to the user's own Cloudflare Worker set up, and how did the last one go."""
+    from app.cloud import sync
+
+    return sync.status()
+
+
+@router.post("/cloud/sync")
+def cloud_sync():
+    """Send the snapshot to the cloud now (the same as after every cycle)."""
+    from app.cloud import sync
+
+    if _sync_lock.locked():
+        raise HTTPException(status_code=409, detail="Synchronizace už běží.")
+    with _sync_lock:
+        return sync.push()
+
+
+@router.post("/cloud/token")
+def cloud_token():
+    """Create the sync token once (random, stored only in backend/.env). It is never returned by the API."""
+    import secrets as pysecrets
+
+    if secrets.get("FTI_SYNC_TOKEN"):
+        return {"created": False, "token_set": True}
+    secrets.set_key("FTI_SYNC_TOKEN", pysecrets.token_urlsafe(48))
+    return {"created": True, "token_set": True}
+
+
+_sync_lock = threading.Lock()
+
+
+@router.post("/ai/resume")
+def ai_resume(session: Session = Depends(get_session)):
+    """Re-enable AI after a pause (outage) or a payment warning — the caps stay as they are."""
+    from app.ai import guard
+
+    guard.resume()
+    return guard.status(session)
 
 
 @router.post("/mt5/test")

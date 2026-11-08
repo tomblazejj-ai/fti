@@ -18,6 +18,9 @@ def init_db(bind=None) -> None:
     bind = bind or engine
     Base.metadata.create_all(bind=bind)
     add_missing_columns(bind)
+    from app.data import migrations
+
+    migrations.apply_all(bind)  # one-time data migrations (recorded, never deleting anything)
 
 
 def add_missing_columns(bind) -> list[str]:

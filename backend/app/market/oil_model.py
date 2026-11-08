@@ -115,6 +115,8 @@ def supply_risk_component(headlines: list[dict], now: dt.datetime) -> dict:
     cutoff = now - dt.timedelta(hours=48)
     hits = []
     for h in headlines:
+        if h.get("time_basis") == "fetched":
+            continue  # only FTI's fetch time is known — not provably of the last 48 h
         try:
             if dt.datetime.fromisoformat(h["published_at"]) < cutoff:
                 continue

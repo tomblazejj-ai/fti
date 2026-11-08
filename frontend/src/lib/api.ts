@@ -1,4 +1,18 @@
-import type { AuditRow, CalendarAll, CandlesResponse, MarketsResponse, ProbeRow, SourcesResponse, TickersResponse } from "./types";
+import { guardStale } from "./staleGuard";
+import type {
+  AiAnalysis,
+  AiGroqStatus,
+  AiRunResult,
+  AiStatus,
+  AiTestResult,
+  AuditRow,
+  CalendarAll,
+  CandlesResponse,
+  MarketsResponse,
+  ProbeRow,
+  SourcesResponse,
+  TickersResponse,
+} from "./types";
 
 // Same-origin by default (the web build is served by FastAPI itself).
 let baseUrl = "";
@@ -26,6 +40,7 @@ const STATIC_FILES: Record<string, string> = {
   "/api/tickers": "data/tickers.json",
   "/api/data/audit": "data/audit.json",
   "/api/sources": "data/sources.json",
+  "/api/ai/analyses": "data/ai.json", // the last AI analyses the cloud made
 };
 
 export function staticPath(path: string): string | null {
@@ -63,7 +78,8 @@ async function request<T>(path: string): Promise<T> {
     }
     throw new ApiError(response.status, detail);
   }
-  return response.json() as Promise<T>;
+  const body = (await response.json()) as T;
+  return STATIC ? guardStale(body) : body; // the phone may show a snapshot from hours ago
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
@@ -90,6 +106,16 @@ export const api = {
   updateSettings: (patch: Record<string, unknown>) => post<Record<string, unknown>>("/api/settings", { patch }),
   dataTest: () => post<{ tested_at: string; rows: ProbeRow[] }>("/api/data/test", {}),
   mt5Test: () => post<{ ok: boolean; bars: number; symbol: string; broker: string; server: string }>("/api/mt5/test", {}),
+  aiStatus: () => request<AiStatus>("/api/ai/status"),
+  aiTest: () => post<AiTestResult>("/api/ai/test", {}),
+  aiAnalyze: (task: string, code?: string) => post<AiRunResult>("/api/ai/analyze", { task, code }),
+  aiAnalyses: (code: string, task?: string) =>
+    STATIC
+      ? request<{ analyses: AiAnalysis[] }>("/api/ai/analyses").then((b) => ({
+          analyses: (b.analyses ?? []).filter((a) => a.code === code && (!task || a.task === task)).slice(0, 1),
+        }))
+      : request<{ analyses: AiAnalysis[] }>(`/api/ai/analyses?code=${encodeURIComponent(code)}${task ? `&task=${encodeURIComponent(task)}` : ""}&limit=1`),
+  aiResume: () => post<AiGroqStatus>("/api/ai/resume", {}),
 };
 
 // The phone version shows the snapshot quotes exactly as the central price layer produced them

@@ -13,3 +13,9 @@ backend/fti.log
 backend/cache/
 backend/backups/
 backend/fti_settings.json
+frontend/dist-static/
+cloud/worker/node_modules/
+cloud/worker/.wrangler/
+cloud/worker/.dev.vars
+backend/fti-console.log
+backend/fti-start.log

@@ -1,0 +1,30 @@
+// FTI cloud (C1): the phone app + the latest results of the Python engine, kept in D1 — computed every 30 minutes by
+// GitHub Actions (no PC needed) and, when it runs, by the PC.
+// Free plan only (Workers Free + D1 Free): on a limit Cloudflare blocks, it never bills — no payment method is set.
+// Secrets are never in this file: SYNC_TOKEN is a Worker secret (locally in .dev.vars, which git ignores).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fti",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-15",
+  // the phone build of the app (VITE_STATIC=1 into frontend/dist-static); /data/* and /internal/* go to the Worker
+  "assets": {
+    "directory": "../../frontend/dist-static",
+    "binding": "ASSETS",
+    "run_worker_first": ["/data/*", "/internal/*", "/api/*"]
+  },
+  // who may write besides the PC: GitHub Actions of this repository's main branch (OIDC, no stored password)
+  "vars": {
+    "GITHUB_REPO": "tomblazejj-ai/fti",
+    "OIDC_AUDIENCE": "fti-cloud"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "fti",
+      // created 2026-11-08 in the user's Cloudflare account (Free plan, region EEUR)
+      "database_id": "84d850ee-8990-455e-b4bb-622d05086918",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

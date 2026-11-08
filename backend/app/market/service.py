@@ -17,6 +17,7 @@ import statistics
 from app.connectors import calendar_ics, cot, ecb, ffcal, fred, fred_calendar, intl_macro, kraken, nbp, worldbank
 from app.connectors.cot import CotUnavailableError
 from app.connectors.fred import FredUnavailableError
+from app.market import intermarket
 from app.market import (central_banks, decision, dxy, econ_calendar, fx_model, headline_risk, market_status, markets, mtf,
                         scorecard, seasonality, sources, tra)
 from app.market.cot_analysis import analyze as analyze_cot, analyze_usd, long_short_view
@@ -293,6 +294,19 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
     except FredUnavailableError as exc:
         warnings.append(f"Volatilita zlata ({GOLD_VOL_SERIES}) nedostupná: {exc}")
 
+    intermarket_view = None  # VIX, Treasury yields, oil, S&P 500 vs. gold — the context of the AI analysis
+    try:
+        im_series = {}
+        for sid in intermarket.SERIES_IDS:
+            try:
+                im_series[sid] = _series(sid)
+            except FredUnavailableError as exc:
+                warnings.append(f"Mezitržní řada {sid} nedostupná: {exc}")
+        intermarket_view = intermarket.build(im_series, {c.time.date().isoformat(): c.close for c in candles.get("D1", [])}, now)
+    except Exception as exc:  # noqa: BLE001 — context only, never a reason to lose the gold analysis
+        logger.exception("Intermarket failed")
+        warnings.append(f"Mezitržní přehled se nepodařilo sestavit: {exc}")
+
     verdict = build_verdict(fundamental, technical, correlations, gold_vol, next_fomc, cot=cot_result, news=news)
     season = seasonality.analyze(candles.get("W1", []), now, source=(gold_data.get("W1") or {}).get("source") or "XAUUSD")
     dollar, dxy_candles = _dxy_section(candles, now, warnings)
@@ -370,6 +384,7 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
         "seasonality_long": season_long,
         "cot_usd": cot_usd,
         "headline_risk": headline,
+        "intermarket": intermarket_view,
         "season_daily": season_daily or None,
         "markets": market_view,
         "calendar_all": _calendar_payload(events_all, now),
@@ -564,6 +579,14 @@ def _markets_section(tra_score, gold_rows, ecb_rates, dollar, news, events, seas
                             "as_of": q.get("as_of") or gold_d1[-1].time.isoformat(), "live": q.get("status") == "LIVE",
                             "source": info.get("source") or "XAUUSD", "quality": q, "market": info.get("market"),
                             "last_quote": info.get("last_quote")}
+    else:
+        from app.data import prices as price_layer
+
+        q = price_layer.quote("XAUUSD", now)  # no broker candles: the central layer may still have the indicative spot price
+        if q.get("available"):
+            prices["XAUUSD"] = {"value": q["price"], "change_pct": q.get("change_pct"), "as_of": q["quality"].get("as_of"),
+                                "live": False, "source": q["source"], "quality": q["quality"], "market": q["market"],
+                                "last_quote": q["last_quote"]}
     swing = (mtf.analyze_all({"D1": gold_d1, "W1": candles.get("W1", [])}, unit="$").get("swing") or {}) if gold_d1 else {}
     trends["XAUUSD"] = swing.get("word")
 

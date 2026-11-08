@@ -350,3 +350,91 @@ globální pravidlo pravdivosti všech instrumentů a rozpočet **0 Kč** pro ce
   nejnovějšího údaje (ne jen HTTP 200).
 - Fundamentální karta zlata ukazuje u každé kategorie data a jejich období (např. HDP USA
   +3,4 % = 3. čtvrtletí 2026, anualizovaně).
+
+## Modul 12 — AI přes Groq Free, jen výklad výpočtů FTI (2026-11-01)
+
+- **Poskytovatel:** Groq, výhradně bezplatný tarif Free, přes oficiální rozhraní kompatibilní
+  s OpenAI (`https://api.groq.com/openai/v1`, volání přes httpx, žádná nová knihovna).
+  Povolené jsou jen produkční modely `openai/gpt-oss-120b`, `openai/gpt-oss-20b` a záložní
+  `llama-3.3-70b-versatile`; žádné placené režimy (Batch, Flex). Mistral zatím ne.
+- **Klíč** jen `GROQ_API_KEY` v proměnných prostředí nebo v `backend/.env` (v `.gitignore`).
+  API ho nikdy nevrací, u AI klíče se neukazují ani poslední znaky, výpisy procházejí filtrem,
+  který maže vše, co vypadá jako klíč (`app/ai/redact.py`).
+- **Vlastní limity FTI** (`app/ai/guard.py`): nejvýš 80 dotazů denně (natvrdo, nastavení je může
+  jen snížit; počítají se i neúspěšné), 100 000 tokenů denně, 6 dotazů za minutu, nejvýš 90 %
+  minutového limitu tokenů, který Groq hlásí; posledních 20 % denního limitu jen pro důležité
+  události. HTTP 429 → model čeká podle `retry-after` / obnovy denního limitu; výpadek → pauza
+  1 → 5 → 15 → 60 min; odmítnutý klíč → AI vypnutá do změny klíče; požadavek platby (402) →
+  AI zastavená do ručního povolení. Stav i čítače jsou v databázi (přežijí restart).
+- **Proč ne „polovina minutového limitu“:** dotaz na zlato má i s odpovědí ~3 700 tokenů,
+  Groq Free u gpt-oss hlásí 8 000 tokenů za minutu; polovina by takový dotaz zablokovala natrvalo.
+- **AI nesmí nic vymýšlet:** dostane jen balíček faktů z výpočtu FTI (`app/ai/facts.py`, každý
+  fakt s označením, zdrojem a datem). Odpověď se kontroluje (`app/ai/validate.py`): schéma,
+  existující označení faktů a každé číslo v textu musí být ve faktech (v libovolném zápisu).
+  Neprojde-li, uloží se jako „neověřeno“ a aplikace ukazuje rozbor FTI. Rozhodnutí LONG/SHORT
+  nikdy nedělá AI (sloupec `preferred` zůstává prázdný).
+- **Úspornost:** stejné vstupy → uložená odpověď bez dotazu; odstupy (tržní výklad 60 min,
+  briefing 240 min, změna 15 min); automatické analýzy (výchozí vypnuto) jen při změně BIAS
+  nebo skóre o ≥ 2 body, u důležité zprávy (relevance ≥ 0,5, max. 2 za cyklus) a 2× denně
+  briefing; nejvýš 3 dotazy na cyklus.
+- **Nepřipravené úlohy** (engine pro ně nemá vstupy): LONG/SHORT/NO TRADE (engine má jen
+  fundamentální BIAS), makro událost po zveřejnění (kalendář neukládá actual), S/D zóny, order
+  blocky a FVG. Aplikace je ukazuje jako nepřipravené, žádný AI text pro ně nevzniká.
+- Mobilní (statická) verze AI nemá — přijde až s cloudem.
+
+## Etapa 2 — datová infrastruktura (listopad 2026)
+
+- **2026-11-07 — Vize je závazná.** Produktová vize (osobní AI trading analytik, AI-first,
+  aktualizace modelů jen po ověření, Live AI Market Analyst, Intermarket Intelligence) je
+  v [VIZE.md](VIZE.md). Nic z ní se neimplementuje předčasně; etapa 2 ji připravuje daty.
+- **2026-11-07 — Bez platební karty.** Oracle Cloud Always Free uživatel neschválil (ověření
+  kartou). Twelve Data Basic se neintegruje (jen „bez zobrazení“, XAU/USD až v placeném).
+- **2026-11-07 — Dukascopy má vlastní historii.** `bars.collect_history()` ukládá Dukascopy
+  XAUUSD při každé obnově trhu, i když se zobrazuje MT5; jen celé svíčky, rozpracovaná nikdy
+  jako uzavřená, mezery se hlásí a nedoplňují.
+- **2026-11-07 — Monitoring hodnotí zdroj podle toho, co nabízí.** Nepodporovaný rámec (H1
+  z denního zdroje) není chyba; odmítnutá data kontrolou kvality se počítají zvlášť.
+- **2026-11-07 — Čas zprávy má vždy svůj původ.** Sloupec `news_items.time_basis`:
+  `published` (čas zdroje), `gdelt_seen` (GDELT čas publikace nedává, jen kdy článek zachytil),
+  `fetched` (zdroj čas neuvedl, stojí tam čas stažení FTI — vždy s popiskem). GDELT článek bez
+  času se neuloží. Staré záznamy podle pravidla ověřeného na datech (30× `fetched`, vše RSS
+  Investing.com technika); časy samotné se nezměnily.
+- **2026-11-07 — GDELT šetrně.** 41 % dotazů skončilo 429 při rozestupu 5 s. Nově 2 dotazy
+  na cyklus po 10 s, střídání, jen nové články od posledního úspěchu, pauza 15 → 30 → 60 min
+  uložená přes restart, jedno opakování při krátkém výpadku.
+- **2026-11-07 — AI zná původ každého času zprávy (nález A).** Fakt zprávy nese vedle času
+  „k“ pole `puvod_casu` (čas publikace / zachycení GDELT / stažení FTI) a systémový pokyn
+  zakazuje vydávat zachycení či stažení za publikaci. AI dostává originální titulek, ne
+  strojový překlad.
+- **2026-11-07 — Neznámé stáří není čerstvost (nález B).** Zpráva jen s časem stažení
+  (`fetched`) se nezapočítává do rizika titulků, nálady zpráv, váhy zpráv ve skóre ani rizika
+  nabídky ropy; každý výpočet uvádí, kolik jich vynechal. V seznamech je až za zprávami se
+  známým časem. Žádný náhradní čas se nevymýšlí. Čas zachycení GDELT se dál bere jako
+  přibližný (42 článků s datem v URL: 37 týž den, 3 další den, 2 o 2–3 dny později).
+- **2026-11-07 — GDELT „gold“ jen o zlatě jako trhu (nález C).** Ze 250 článků starého dotazu
+  bylo o trhu se zlatem asi 15–20 (GDELT hledá v překladech celých textů ve ~65 jazycích).
+  Dotaz nově vyžaduje i tržní slovo; FTI navíc kontroluje titulek (zlato + tržní souvislost
+  ve ~20 jazycích, `app/news/relevance.py`). Jazyk bez slovníku se nevyřazuje — souvislost
+  ručí dotaz. Na skutečné odpovědi: ponecháno 17 z 250, z toho 15 o trhu se zlatem; žádný
+  vyřazený titulek se zlatem nebyl o trhu. Obrazovka Zprávy už nebere „Gold Coast“/medaile.
+- **2026-11-07 — Překlad nesmí měnit čísla (nález D).** Každý překlad se kontroluje: všechna
+  čísla s měnou, procentem a řádem (tisíc / milion / miliarda) i rozpětí musí sedět
+  s originálem. Neprojde-li, uloží se `title_cs = ""` a zobrazí se originál s popiskem.
+  Kontrola běží i při zobrazení, takže starší chybný překlad se už neukáže (12 z 376
+  uložených, např. „3-month low“ → „kleslo o 8 %“); nedávné se přeloží znovu. Před
+  překladem se opravují mezery GDELT v číslech („$3 , 800“), „$4k“, „$1.28m“ a rozpětí.
+  Struktura databáze se nezměnila, `published_at` zůstává povinný.
+- **2026-11-08 — První kompletní AI analýza XAU/USD (základ etapy 3/5).** Společný analytický
+  kontext (`app/ai/context.py`, 12 oblastí, každý údaj se zdrojem, časem a kvalitou) → AI Router
+  (`app/ai/router.py`, registr poskytovatelů; používá se jen bezplatný + schválený + s klientem
+  + s klíčem, placené nikdy) → tři AI role (`app/ai/pipeline.py`: makro na silném modelu,
+  technika na rychlém, hlavní analytik) → LONG / SHORT / NO TRADE se scénáři, potvrzením,
+  invalidací a vztahem k pravidlovému verdiktu FTI → kontrola čísel a pravidel → uložení
+  (`analyses`, kind `ai_trade`) → panel „Komplexní AI analýza“ na detailu zlata. Role kvůli
+  limitu Groq Free 8 000 tokenů/min na model (celý kontext se do jednoho dotazu nevejde).
+  Automaticky jen při skutečné změně (BIAS/skóre, trend, riziko titulků, zveřejněná událost),
+  nejvýš 6× denně, a jen se zapnutými automatickými analýzami. Mezitrh (VIX, výnosy 10 let
+  nominální i reálný, WTI, S&P 500) přidán do výpočtu jako data pro AI — vzhled beze změny.
+  Ukázka 8. 11. na kopii DB: 3 volání Groq, 16 341 tokenů, 128 s, 0 Kč, výsledek NO TRADE.
+  Známá slabina: kontrola hlídá vymyšlená čísla, ne špatně přiřazená (model zaměnil korelace
+  a směr výnosů) — další krok je nezávislá kontrolní role.

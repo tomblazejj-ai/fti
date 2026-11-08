@@ -4,10 +4,17 @@ import { Icon } from "../components/Icon";
 import { Card, Empty, ErrorState, Skeleton } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
 import { STATIC, api } from "../lib/api";
-import { formatDateTime } from "../lib/format";
-import type { AuditRow, MarketStateInfo, ProbeRow, SourcesResponse } from "../lib/types";
+import { formatDateTime, shortDate } from "../lib/format";
+import type { AiTestResult, AuditRow, MarketStateInfo, ProbeRow, SourcesResponse } from "../lib/types";
 
-const SRC_STATUS: Record<string, string> = { ok: "funguje", degraded: "poslední pokus selhal", down: "nefunguje", unknown: "zatím nezkoušeno" };
+const SRC_STATUS: Record<string, string> = {
+  ok: "v pořádku",
+  delayed: "data se zpožděním",
+  stale: "zastaralá data",
+  outage: "výpadek (poslední pokus selhal)",
+  unavailable: "nedostupný",
+  unknown: "zatím nezkoušeno",
+};
 
 /** What data FTI really uses for every instrument, the health of every source, and the
  * connection of real broker quotes (MT5 / OANDA) — everything free. */
@@ -21,6 +28,7 @@ export function DataPage() {
         <p>Co FTI u každého instrumentu skutečně používá, odkud to je a jak je to čerstvé. Náhrady (proxy) jsou vždy označené.</p>
       </header>
       {!STATIC && src.data && <Connect s={src.data} onChange={() => { src.reload(); audit.reload(); }} />}
+      {!STATIC && <AiCard />}
       <Card title="Audit instrumentů" icon={<Icon name="layers" size={16} />} i={2} id="audit"
             extra={audit.data && <span className="card-note">zjištěno {formatDateTime(audit.data.computed_at)}</span>}>
         {audit.error && !audit.data ? <ErrorState message={audit.error.message} onRetry={audit.reload} /> :
@@ -149,7 +157,7 @@ function Sources({ s }: { s: SourcesResponse }) {
               <th>Poslední úspěch</th>
               <th>Odezva</th>
               <th>Záznamů</th>
-              <th>Chyby</th>
+              <th>Výpadky a poznámky</th>
             </tr>
           </thead>
           <tbody>
@@ -160,7 +168,14 @@ function Sources({ s }: { s: SourcesResponse }) {
                 <td>{formatDateTime(r.last_ok)}{r.data_as_of && <small>data k {formatDateTime(r.data_as_of)}</small>}</td>
                 <td>{r.last_ms !== null ? `${Math.round(r.last_ms)} ms` : "—"}</td>
                 <td>{r.last_records ?? "—"}</td>
-                <td>{r.error_count}{r.last_error && <small>{r.last_error}</small>}</td>
+                <td>
+                  {r.outage_count} {r.outage_count === 1 ? "výpadek" : "výpadků"}
+                  {r.counting_since && <small>od {formatDateTime(r.counting_since)}</small>}
+                  {r.last_error && r.last_error_at && <small>poslední výpadek {formatDateTime(r.last_error_at)}: {r.last_error}</small>}
+                  {r.rejected_count > 0 && <small>odmítnutá data (kontrola kvality): {r.rejected_count}{r.last_rejected ? ` — ${r.last_rejected}` : ""}</small>}
+                  {r.unsupported_tfs.length > 0 && <small>rámce, které zdroj nenabízí (není chyba): {r.unsupported_tfs.join(", ")}</small>}
+                  {r.error_count > r.outage_count && <small>dříve zapsáno celkem {r.error_count} (včetně nepodporovaných rámců)</small>}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -187,7 +202,7 @@ function Connect({ s, onChange }: { s: SourcesResponse; onChange: () => void }) 
   return (
     <Card title="Skutečné kotace (XAUUSD, CFD, forex)" icon={<Icon name="bolt" size={16} />} i={1} id="pripojeni">
       <p className="hint" style={{ marginTop: 0 } as CSSProperties}>
-        Bez připojeného brokera má XAUUSD jen denní referenční cenu (NBP) a CFD jsou nedostupné — PAXG se za zlato nikdy nedosazuje.
+        Bez připojeného brokera je cena XAUUSD nedostupná a CFD také — PAXG ani referenční řada NBP se za zlato nikdy nedosazují.
         Obě možnosti jsou zdarma. FTI z nich jen čte ceny, nikdy nezadává obchody.
       </p>
       <h3 className="sub">MetaTrader 5 na tomto PC</h3>
@@ -217,7 +232,7 @@ function Connect({ s, onChange }: { s: SourcesResponse; onChange: () => void }) 
       <h3 className="sub">Klíče (ukládají se jen na tomto PC)</h3>
       <ul className="news">
         {s.keys.map((k) => (
-          <li key={k.name}><span>{k.label}: <strong>{k.set ? `nastaven (${k.hint})` : "nenastaven"}</strong></span></li>
+          <li key={k.name}><span>{k.label}: <strong>{k.set ? `nastaven${k.hint ? ` (${k.hint})` : ""}` : "nenastaven"}</strong></span></li>
         ))}
       </ul>
       <div className="form-row">
@@ -231,6 +246,134 @@ function Connect({ s, onChange }: { s: SourcesResponse; onChange: () => void }) 
         </button>
       </div>
       {msg && <p className={msg.ok ? "msg-ok" : "msg-err"}>{msg.text}</p>}
+    </Card>
+  );
+}
+
+/** AI on Groq's FREE plan: the key (stored only on this PC), on/off, the connection test, today's
+ * usage against FTI's own caps, the limits Groq reports, and which AI tasks have their inputs. */
+function AiCard() {
+  const st = useAsync(() => api.aiStatus(), []);
+  const [key, setKey] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [test, setTest] = useState<AiTestResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const act = async (fn: () => Promise<unknown>, ok: string) => {
+    setBusy(true);
+    try {
+      await fn();
+      setMsg({ ok: true, text: ok });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(false);
+      st.reload();
+    }
+  };
+  const g = st.data?.groq;
+  const on = g?.provider === "groq";
+  return (
+    <Card title="AI — Groq (zdarma)" icon={<Icon name="spark" size={16} />} i={1} id="ai">
+      <p className="hint" style={{ marginTop: 0 } as CSSProperties}>
+        FTI používá jen bezplatný tarif Groq Free. Platební kartu ani jinou platební metodu nikde nezadávej. Když se bezplatný limit vyčerpá,
+        AI se pozastaví a FTI funguje dál bez ní. AI jen vykládá výpočty FTI — ceny, skóre ani BIAS nepočítá.
+      </p>
+      {st.error && !st.data ? <ErrorState message={st.error.message} onRetry={st.reload} /> : !g ? <Skeleton rows={3} /> : (
+        <>
+          <p>
+            <span className={`src-dot src-${g.state === "ready" ? "ok" : g.state === "off" ? "unknown" : "down"}`} />
+            <strong>{g.text}</strong>{g.until ? ` Znovu ${formatDateTime(g.until)}.` : ""}
+          </p>
+          {g.limits_changed && (
+            <p className="msg-err">
+              Groq změnil limity ({g.limits_changed.model}: {g.limits_changed.old} → {g.limits_changed.new}). Zkontroluj v konzoli Groq, že máš pořád tarif Free bez platební metody.
+            </p>
+          )}
+
+          <h3 className="sub">Klíč GROQ_API_KEY (uloží se jen na tomto PC)</h3>
+          <p className="muted">{g.key_set ? "Klíč je uložený. Z bezpečnostních důvodů se nikde nezobrazuje." : "Klíč zatím není uložený."}</p>
+          <div className="form-row">
+            <input type="password" autoComplete="off" placeholder="vlož klíč z console.groq.com (začíná gsk_)" value={key}
+                   onChange={(e) => setKey(e.target.value)} aria-label="Klíč Groq" />
+            <button type="button" className="btn-primary" disabled={busy || !key.trim()}
+                    onClick={() => act(async () => { await api.setKey("GROQ_API_KEY", key); setKey(""); }, "Klíč uložen.")}>
+              Uložit klíč
+            </button>
+            {g.key_set && (
+              <button type="button" className="btn" disabled={busy} onClick={() => act(() => api.setKey("GROQ_API_KEY", ""), "Klíč smazán.")}>
+                Smazat klíč
+              </button>
+            )}
+          </div>
+
+          <div className="form-row">
+            <button type="button" className="btn" disabled={busy || !g.key_set}
+                    onClick={() => act(async () => setTest(await api.aiTest()), "Test proběhl.")}>
+              Otestovat připojení
+            </button>
+            <button type="button" className={on ? "btn" : "btn-primary"} disabled={busy || (!on && !g.key_set)}
+                    onClick={() => act(() => api.updateSettings({ ai: { provider: on ? "none" : "groq" } }), on ? "AI vypnuta." : "AI zapnuta.")}>
+              {on ? "Vypnout AI" : "Zapnout AI"}
+            </button>
+            {on && (
+              <button type="button" className="btn" disabled={busy}
+                      onClick={() => act(() => api.updateSettings({ ai: { auto_analyses: !g.auto_analyses } }),
+                                         g.auto_analyses ? "Automatické analýzy vypnuty." : "Automatické analýzy zapnuty.")}>
+                Automatické analýzy při významné změně: {g.auto_analyses ? "zapnuto" : "vypnuto"}
+              </button>
+            )}
+            {(g.state === "paused" || g.state === "billing") && (
+              <button type="button" className="btn" disabled={busy} onClick={() => act(() => api.aiResume(), "AI znovu povolena.")}>
+                Znovu povolit AI
+              </button>
+            )}
+          </div>
+          {msg && <p className={msg.ok ? "msg-ok" : "msg-err"}>{msg.text}</p>}
+          {test && (
+            <p className={test.ok ? "msg-ok" : "msg-err"}>
+              {test.text}
+              {test.seconds !== undefined && ` Odpověď za ${test.seconds} s.`}
+              {test.models && ` Dostupné bezplatné modely: ${test.models.join(", ") || "žádný"}.`}
+              {test.limits?.requests_per_day !== undefined &&
+                ` Groq hlásí pro tento účet ${test.limits.requests_per_day} dotazů denně a ${test.limits.tokens_per_minute ?? "?"} tokenů za minutu.`}
+            </p>
+          )}
+
+          <h3 className="sub">Dnešní spotřeba (vlastní limity FTI)</h3>
+          <ul className="news">
+            <li><span>Dotazy: <strong>{g.usage.requests} z {g.usage.cap}</strong> (od {g.usage.reserve_from} jen důležité události), neúspěšné {g.usage.failed}</span></li>
+            <li><span>Tokeny: <strong>{g.usage.tokens.toLocaleString("cs-CZ")} z {g.usage.token_cap.toLocaleString("cs-CZ")}</strong></span></li>
+            <li><span>Nejvýš {g.usage.per_minute_cap} dotazů za minutu a nejvýš 90 % minutového limitu tokenů Groq</span></li>
+          </ul>
+
+          <h3 className="sub">Limity, které Groq hlásí pro tento účet</h3>
+          <div className="twrap">
+            <table className="dtable">
+              <thead><tr><th>Model</th><th>Dotazů denně</th><th>Tokenů za minutu</th><th>Stav</th></tr></thead>
+              <tbody>
+                {Object.entries(g.models).map(([m, s]) => (
+                  <tr key={m}>
+                    <td>{m}</td>
+                    <td>{s.limits?.requests_per_day ?? "—"}{s.limits?.requests_left_today !== undefined && <small>zbývá {s.limits.requests_left_today}</small>}</td>
+                    <td>{s.limits?.tokens_per_minute ?? "—"}</td>
+                    <td>{s.paused_until && new Date(s.paused_until) > new Date() ? `pauza do ${formatDateTime(s.paused_until)} (${s.reason})` : "k dispozici"}
+                      {s.limits?.seen_at && <small>zjištěno {formatDateTime(String(s.limits.seen_at))}</small>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="note">„—“ = Groq je zatím nenahlásil (zjistí se při prvním dotazu nebo testu).</p>
+
+          <h3 className="sub">Co AI umí</h3>
+          <ul className="news">
+            {(st.data?.tasks ?? []).map((t) => (
+              <li key={t.id}><span>{t.ready ? "✓" : "○"} <strong>{t.name}</strong>{t.ready ? (t.cooldown_min ? ` — nejvýš jednou za ${t.cooldown_min} min` : "") : ` — nepřipraveno: ${t.why_not}`}</span></li>
+            ))}
+          </ul>
+          <p className="note">Podmínky Groq Free ověřeny {shortDate(g.terms_checked)}. Cena: {g.cost}.</p>
+        </>
+      )}
     </Card>
   );
 }

@@ -78,8 +78,10 @@ def _no_portals_or_translation(monkeypatch):
     monkeypatch.setattr(ecb, "fetch_history", no_ecb)
 
     # FTI data layer: no retries, no official fallbacks, no broker feeds, no stored bars in tests
-    from app.connectors import fred, official_alt
+    from app.connectors import fred, gdelt, official_alt
     from app.data import bars, health, secrets, store
+
+    gdelt.reset()  # whose turn it is and any pause after a refusal start fresh in every test
 
     monkeypatch.setattr(fred, "RETRIES", 0)
     monkeypatch.setattr(fred, "_official_fallback", lambda series_id, history_days: None)
@@ -100,6 +102,21 @@ def _no_portals_or_translation(monkeypatch):
 
     monkeypatch.setattr(bars, "_kraken", no_kraken_bars)
     monkeypatch.setattr(bars, "kraken_last_trade", lambda symbol: None)  # tests set trade times explicitly
+    from app.data import indicative
+
+    indicative.clear()
+    monkeypatch.setattr(indicative, "_fetch", lambda code: None)  # no gold-api.com in tests unless a test sets it
+    from app.connectors import dukascopy
+
+    dukascopy.reset()
+
+    def no_dukascopy(symbol, sec, days, now=None):
+        raise dukascopy.DukascopyUnavailable("v testech se nestahuje")
+
+    monkeypatch.setattr(dukascopy, "bars", no_dukascopy)
+    from app.data import mt5 as mt5_feed
+
+    monkeypatch.setattr(mt5_feed, "terminal_running", lambda path: False)  # no process lookups in tests
     monkeypatch.setattr(secrets, "get", lambda name: "")
 
 

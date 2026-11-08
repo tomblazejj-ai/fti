@@ -29,6 +29,7 @@ class RawNewsEntry:
     url: str
     published_at: dt.datetime
     snippet: str
+    time_basis: str = "published"  # "fetched" when the feed gives no time (FTI's fetch time stands in)
 
 
 def fetch_feed(source: str, url: str, client: httpx.Client | None = None) -> list[RawNewsEntry]:
@@ -63,6 +64,7 @@ def fetch_feed(source: str, url: str, client: httpx.Client | None = None) -> lis
                 url=entry.get("link", ""),
                 published_at=published_at,
                 snippet=entry.get("summary", ""),
+                time_basis="published" if published else "fetched",
             )
         )
     return entries

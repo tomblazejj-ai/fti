@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import datetime as dt
 
+from app.news.timebasis import unknown_age_note
+
 MACRO_LABELS = {
     "real_yield_10y": ("Reálné výnosy 10 let", "FRED DFII10", "denně (zpoždění 1 den)"),
     "usd_index": ("Dolar – široký index", "FRED DTWEXBGS", "týdně za každý den"),
@@ -108,7 +110,8 @@ def build(payload: dict, macro: dict, now: dt.datetime, market_open: bool) -> li
     rows.append(_row("news", "Zprávy", "RSS: fxstreet.cz, FXStreet, Investing.com, CNBC, MarketWatch, Fed, ECB, BoE",
                      "portály každých 10 min, centrální banky 30 min",
                      latest, "ok" if latest and (news_age_h <= 12 or not market_open) else ("late" if latest else "missing"),
-                     f"{news.get('count', 0)} zpráv o zlatě za {news.get('hours', 72)} h."))
+                     f"{news.get('count', 0)} zpráv o zlatě za {news.get('hours', 72)} h."
+                     + (" " + unknown_age_note(news["unknown_age"]) if news.get("unknown_age") else "")))
 
     gv = payload.get("gold_vol")
     rows.append(_row("gvz", "Volatilita zlata (GVZ)", "FRED GVZCLS (CBOE)", "denně", gv.get("as_of") if gv else None,

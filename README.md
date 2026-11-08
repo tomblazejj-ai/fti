@@ -31,6 +31,12 @@ automaticky každých 30 minut.
 - **Kalendář** — USD, EUR, GBP a JPY, barvy podle dopadu, prognózy.
 - **Zprávy** — zprávy a technické výhledy podle trhu.
 - **Mobil** — stejná aplikace jako aplikace v telefonu (viz `docs/MOBIL.md`).
+- **Výklad AI (volitelně, zdarma)** — Groq, jen bezplatný tarif Free. AI jen vykládá
+  výpočty FTI; každé číslo v její odpovědi se kontroluje proti datům FTI. Klíč se vkládá
+  v aplikaci: **Data → AI — Groq (zdarma) → vložit klíč → Uložit klíč → Otestovat
+  připojení → Zapnout AI**. Uloží se jen do `backend/.env` na tomto PC (mimo git).
+  Vlastní limity FTI: nejvýš 80 dotazů denně; po vyčerpání se AI pozastaví a FTI funguje
+  dál bez ní. Podrobnosti v `docs/DECISIONS.md` (Modul 12).
 
 ## Zdroje dat (vše zdarma, bez klíčů)
 

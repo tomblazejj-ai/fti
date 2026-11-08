@@ -105,8 +105,9 @@ def _p_rss() -> tuple[int, str | None, str]:
     entries, errors = portals.fetch_all()
     if not entries:
         raise RuntimeError("; ".join(errors[:3]) or "žádné zprávy")
-    newest = max(e.published_at for e in entries)
-    return len(entries), newest.isoformat(), "intraday"
+    dated = [e.published_at for e in entries if getattr(e, "time_basis", "published") == "published"]
+    newest = max(dated) if dated else None  # a fetch time is not the newest article's time
+    return len(entries), newest.isoformat() if newest else None, "intraday"
 
 
 def _p_worldbank() -> tuple[int, str | None, str]:

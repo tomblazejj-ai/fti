@@ -91,6 +91,7 @@ def test_mt5_feed_gives_real_xauusd_in_utc_with_the_broker_named(monkeypatch):
     cfg = {"enabled": True, "terminal_path": "C:/x/terminal64.exe", "symbols": {}, "server_utc_offset_hours": server_offset}
     monkeypatch.setattr(settings_store, "get", lambda path, default=None: cfg if path == "mt5" else default)
     mt5._state.update({"path": None, "offset": None, "offset_at": 0.0})
+    monkeypatch.setattr(mt5, "terminal_running", lambda path: True)  # the user has the terminal open
     bs = bars.get_bars("XAUUSD", "H1", now=NOW, store=False)
     assert bs.ok and bs.provider == "mt5"
     assert bs.feed_symbol == "XAUUSD_ecn" and "Purple Trading" in bs.source

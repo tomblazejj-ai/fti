@@ -242,7 +242,7 @@ def get_history_entry(code: str, entry_id: int, session: Session = Depends(get_s
         for n in session.scalars(select(NewsItem).where(NewsItem.id.in_(entry.related_news_ids))):
             news.append({
                 "id": n.id, "title": n.title, "source": n.source, "url": n.url or None,
-                "published_at": n.published_at, "factor_tags": n.factor_tags, "sentiment_scores": n.sentiment_scores,
+                "published_at": n.published_at, "time_basis": n.time_basis, "factor_tags": n.factor_tags, "sentiment_scores": n.sentiment_scores,
             })
     observations = []
     if entry.related_observation_ids:
@@ -308,7 +308,8 @@ def get_tickers(session: Session = Depends(get_session)):
                         "change_pct": q["change_pct"], "source": q["source"], "provider": q["provider"],
                         "live": bool(lq.get("tradable_now")), "as_of": lq.get("time"), "quote_time_cs": lq.get("time_cs"),
                         "market": q["market"], "proxy": q["proxy"], "kind_cs": q["kind_cs"], "quality": q["quality"],
-                        "reference": q["reference"], "time_verified": bool(lq.get("time_verified")), "itype_cs": q["itype_cs"]})
+                        "reference": q["reference"], "time_verified": bool(lq.get("time_verified")), "itype_cs": q["itype_cs"],
+                        "indicative": bool(q.get("indicative"))})
         return out, missing
 
     live, unavailable = build()  # no separate cache: the ticker shows exactly the quote every other module shows

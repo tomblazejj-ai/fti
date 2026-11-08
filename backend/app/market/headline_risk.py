@@ -17,6 +17,7 @@ import statistics
 from zoneinfo import ZoneInfo
 
 from app.connectors.kraken import Candle
+from app.news import timebasis
 
 NEW_YORK = ZoneInfo("America/New_York")
 LOOKBACK_HOURS = 12
@@ -63,6 +64,7 @@ def _spike(m15: list[Candle]) -> dict | None:
 def build(headlines: list[dict], m15: list[Candle], market: dict, now: dt.datetime) -> dict:
     items = []
     seen: set[str] = set()
+    unknown_age: set[str] = set()
     cutoff = now - dt.timedelta(hours=LOOKBACK_HOURS)
     for h in headlines:
         try:
@@ -70,12 +72,17 @@ def build(headlines: list[dict], m15: list[Candle], market: dict, now: dt.dateti
         except (KeyError, ValueError):
             continue
         if t < cutoff:
+            continue  # also a fetch time before the window: published even earlier, so surely old
+        if not timebasis.age_known(h.get("time_basis")):
+            # only FTI's fetch time is known: the headline may be days old, so it cannot raise today's risk
+            if classify(f"{h.get('title_en') or ''} {h.get('title') or ''}"):
+                unknown_age.add(h.get("url") or h.get("title") or "")
             continue
         topic = classify(f"{h.get('title_en') or ''} {h.get('title') or ''}")
         key = re.sub(r"[^a-z0-9]+", "", (h.get("title_en") or h.get("title") or "").lower())[:60]
         if topic and key not in seen:
             seen.add(key)
-            items.append({**{k: h.get(k) for k in ("title", "source", "url", "published_at", "translated")}, "topic": topic})
+            items.append({**{k: h.get(k) for k in ("title", "source", "url", "published_at", "time_basis", "translated")}, "topic": topic})
     items.sort(key=lambda x: x["published_at"], reverse=True)
     spike = _spike(m15) if market.get("open") else None
 
@@ -99,7 +106,9 @@ def build(headlines: list[dict], m15: list[Candle], market: dict, now: dt.dateti
         "weekend": weekend,
         "hours": LOOKBACK_HOURS,
         "cluster": cluster,
+        "unknown_age": len(unknown_age),
         "note": ("Zprávy vybírá filtr podle klíčových slov — ne každá je skutečný šok. Vysoké riziko hlásíme jen při "
-                 "neobvykle velké svíčce nebo když o stejném tématu píše víc zdrojů během 3 hodin."),
+                 "neobvykle velké svíčce nebo když o stejném tématu píše víc zdrojů během 3 hodin."
+                 + (" " + timebasis.unknown_age_note(len(unknown_age)) if unknown_age else "")),
         "advice": [],
     }

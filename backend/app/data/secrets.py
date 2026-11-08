@@ -16,9 +16,16 @@ ENV_FILE = BACKEND_DIR / ".env"
 KEYS = {
     "FRED_API_KEY": "FRED (oficiální API, klíč zdarma po registraci na fred.stlouisfed.org)",
     "OANDA_API_TOKEN": "OANDA v20 (token zdarma k demo účtu, jen tržní data)",
+    "GROQ_API_KEY": "Groq AI (jen bezplatný tarif Free, klíč z console.groq.com)",
+    "FTI_SYNC_TOKEN": "Token synchronizace s vlastním cloudem FTI (Cloudflare Worker)",
 }
 _lock = threading.Lock()
 _VALID = re.compile(r"^[A-Za-z0-9_\-\.]{8,200}$")
+# keys whose shape is known: a wrong paste is caught before it is saved
+_FORMATS = {"GROQ_API_KEY": (re.compile(r"^gsk_[A-Za-z0-9]{20,200}$"), "Klíč Groq začíná „gsk_“ a nemá mezery ani jiné znaky."),
+            "FTI_SYNC_TOKEN": (re.compile(r"^[A-Za-z0-9_\-]{32,128}$"), "Token má 32–128 znaků (písmena, číslice, - a _).")}
+# not even the last characters are shown for these
+_NO_HINT = {"GROQ_API_KEY", "FTI_SYNC_TOKEN"}
 
 
 def _read_file() -> dict[str, str]:
@@ -44,11 +51,12 @@ def get(name: str) -> str:
 
 
 def status() -> list[dict]:
-    """Which keys are set — never the key itself, only its last 4 characters."""
+    """Which keys are set — never the key itself, at most its last 4 characters (none for AI keys)."""
     out = []
     for name, label in KEYS.items():
         v = get(name)
-        out.append({"name": name, "label": label, "set": bool(v), "hint": f"…{v[-4:]}" if len(v) >= 8 else None})
+        hint = f"…{v[-4:]}" if len(v) >= 8 and name not in _NO_HINT else None
+        out.append({"name": name, "label": label, "set": bool(v), "hint": hint})
     return out
 
 
@@ -59,6 +67,8 @@ def set_key(name: str, value: str) -> None:
     value = value.strip()
     if value and not _VALID.match(value):
         raise ValueError("Klíč má neplatný formát (jen písmena, číslice, -, _ a . bez mezer).")
+    if value and name in _FORMATS and not _FORMATS[name][0].match(value):
+        raise ValueError(_FORMATS[name][1])
     with _lock:
         lines = []
         try:

@@ -16,7 +16,7 @@ import datetime as dt
 import logging
 import threading
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.connectors import cot, fred, gdelt, portals, rss_news
@@ -39,7 +39,7 @@ from app.models import (
     TraScorePoint,
 )
 from app.news.classifier import CLASSIFIER_VERSION, classify, dedup_hash
-from app.news import translate
+from app.news import timebasis, translate
 from app.news.dedupe import find_duplicate
 from app.scoring.base import cz, cz_date
 from app.scoring.xauusd import (
@@ -251,6 +251,7 @@ def _store_news_entries(session: Session, entries: list) -> None:
                 classifier_version=CLASSIFIER_VERSION,
                 language=getattr(entry, "language", "en"),
                 title_cs=entry.title if getattr(entry, "language", "en") == "cs" else None,
+                time_basis=getattr(entry, "time_basis", "published"),
             )
         )
         # flush so find_duplicate() sees this item when a near-duplicate of
@@ -328,13 +329,16 @@ def translate_pending_headlines(session: Session, limit: int = TRANSLATE_PER_CYC
     cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=TRANSLATE_LOOKBACK_DAYS)
     candidates = session.scalars(
         select(NewsItem)
-        .where(NewsItem.language == "en", NewsItem.title_cs.is_(None), NewsItem.published_at >= cutoff)
+        .where(NewsItem.language == "en", or_(NewsItem.title_cs.is_(None), NewsItem.title_cs != translate.REJECTED),
+               NewsItem.published_at >= cutoff)
         .order_by(NewsItem.published_at.desc())
     )
     done = 0
     for item in candidates:
         if done >= limit:
             break
+        if item.title_cs and translate.numbers_consistent(item.title, item.title_cs):
+            continue  # translated, numbers checked (a translation that fails the check is made again, then checked)
         if not item.factor_tags and "XAUUSD" not in item.instrument_tags and not markets.ANY_MARKET.search(item.title):
             continue
         cz_title = translate.translate(item.title)
@@ -343,7 +347,7 @@ def translate_pending_headlines(session: Session, limit: int = TRANSLATE_PER_CYC
             if reason:
                 _warn(reason)
             break
-        item.title_cs = cz_title
+        item.title_cs = cz_title  # REJECTED ("") = a number did not survive: the original is shown, labelled
         done += 1
     session.commit()
     return done
@@ -363,17 +367,20 @@ def _news_signal(session: Session, factor_tag: str, require_instrument: str | No
     ]
     if require_instrument:
         items = [n for n in items if require_instrument in n.instrument_tags]
+    unknown_age = sum(1 for n in items if not timebasis.age_known(n.time_basis))
+    items = [n for n in items if timebasis.age_known(n.time_basis)]  # fetch time is no age: never weighted as fresh
 
     points = [
         NewsDataPoint(
             sentiment=n.sentiment_scores.get(factor_tag, 1.0 if n.sentiment == "bullish" else -1.0 if n.sentiment == "bearish" else 0.0),
             published_at=n.published_at,
             item_id=n.id,
-            description=f'„{n.title}“ ({_source_cz(n.source)}, {cz_date(n.published_at.date().isoformat())})',
+            description=f'„{n.title}“ ({_source_cz(n.source)}, {"zachyceno GDELT " if n.time_basis == timebasis.GDELT_SEEN else ""}'
+                        f'{cz_date(n.published_at.date().isoformat())})',
         )
         for n in items
     ]
-    return NewsSignal(factor_tag=factor_tag, points=points)
+    return NewsSignal(factor_tag=factor_tag, points=points, unknown_age=unknown_age)
 
 
 def _compute_pillar_deltas(old_breakdown: dict, new_breakdown: dict) -> dict:
@@ -522,10 +529,11 @@ def news_mood(session: Session, now: dt.datetime, hours: int = NEWS_MOOD_HOURS) 
     (non-duplicate) article that carries a gold-relevant factor, from all
     sources — portals, central-bank RSS and GDELT."""
     cutoff = now - dt.timedelta(hours=hours)
-    items = [
+    rows = [
         n for n in session.scalars(select(NewsItem).where(NewsItem.published_at >= cutoff))
         if n.duplicate_of_id is None and any(f in n.factor_tags for f in GOLD_FACTORS)
     ]
+    items = [n for n in rows if timebasis.age_known(n.time_basis)]  # unknown age: not "of the last 72 h" for sure
     scored = []
     for n in items:
         vals = [n.sentiment_scores.get(f, 0.0) for f in GOLD_FACTORS if f in n.factor_tags]
@@ -535,13 +543,13 @@ def news_mood(session: Session, now: dt.datetime, hours: int = NEWS_MOOD_HOURS) 
     return {
         "hours": hours,
         "count": len(scored),
+        "unknown_age": len(rows) - len(items),
         "bullish": sum(1 for s, _ in scored if s > 0.1),
         "bearish": sum(1 for s, _ in scored if s < -0.1),
         "score": round(score, 3) if score is not None else None,
         "top": [
-            {"title": n.title_cs or n.title, "translated": n.language == "en" and n.title_cs is not None,
-             "source": _source_cz(n.source), "url": n.url, "published_at": n.published_at.isoformat(),
-             "impact": "bullish" if s > 0.1 else "bearish" if s < -0.1 else "neutral"}
+            {**_titles(n), "source": _source_cz(n.source), "url": n.url, "published_at": n.published_at.isoformat(),
+             "time_basis": n.time_basis, "impact": "bullish" if s > 0.1 else "bearish" if s < -0.1 else "neutral"}
             for s, n in scored[:5]
         ],
         "key": _key_news(scored, now),
@@ -552,13 +560,21 @@ def news_mood(session: Session, now: dt.datetime, hours: int = NEWS_MOOD_HOURS) 
 HEADLINE_HOURS = 48  # headline risk reads the last 12 h, the oil supply risk 48 h
 
 
+def _titles(n: NewsItem) -> dict:
+    """The headline to show (Czech when there is one), the original, and whether the shown one is a machine
+    translation. A translation that changed a number, currency, percentage or scale (title_cs "", or a stored one
+    failing the check) is not shown: the original is, labelled so."""
+    title, translated, failed = translate.shown_title(n.title, n.title_cs, n.language)
+    return {"title": title, "title_en": n.title, "translated": translated, "translation_failed": failed}
+
+
 def _headline_candidates(session: Session, now: dt.datetime) -> list[dict]:
     """All fresh, non-duplicate headlines (any topic) for the headline-risk scan."""
     cutoff = now - dt.timedelta(hours=HEADLINE_HOURS)
     rows = session.scalars(select(NewsItem).where(NewsItem.published_at >= cutoff).order_by(NewsItem.published_at.desc()).limit(600))
     return [
-        {"title": n.title_cs or n.title, "title_en": n.title, "translated": n.language == "en" and n.title_cs is not None,
-         "source": _source_cz(n.source), "url": n.url, "published_at": n.published_at.isoformat()}
+        {**_titles(n), "source": _source_cz(n.source), "url": n.url, "published_at": n.published_at.isoformat(),
+         "time_basis": n.time_basis}
         for n in rows if n.duplicate_of_id is None
     ]
 
@@ -577,9 +593,8 @@ def _key_news(scored: list, now: dt.datetime, limit: int = 5) -> list[dict]:
 
     ranked = sorted(scored, key=weight, reverse=True)[:limit]
     return [
-        {"title": n.title_cs or n.title, "translated": n.language == "en" and n.title_cs is not None,
-         "source": _source_cz(n.source), "url": n.url, "published_at": n.published_at.isoformat(),
-         "impact": "bullish" if s > 0.1 else "bearish" if s < -0.1 else "neutral",
+        {**_titles(n), "source": _source_cz(n.source), "url": n.url, "published_at": n.published_at.isoformat(),
+         "time_basis": n.time_basis, "impact": "bullish" if s > 0.1 else "bearish" if s < -0.1 else "neutral",
          "factors": [FACTOR_CZ[f] for f in GOLD_FACTORS if f in n.factor_tags],
          "gold": "XAUUSD" in (n.instrument_tags or [])}
         for s, n in ranked

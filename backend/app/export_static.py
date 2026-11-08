@@ -24,6 +24,38 @@ CANDLES = {"XAUUSD": ["H4", "D1", "W1"], "PAXGUSD": ["H4", "D1", "W1"], "EURUSD"
 PRIVATE = ("mt5", "keys", "oanda")  # never published: settings and key status of this PC
 
 
+def targets(names: set[str] | None = None) -> dict[str, str]:
+    """API path -> snapshot file name, the same set the phone app reads (optionally only some files)."""
+    out = {
+        "/api/markets": "markets.json",
+        "/api/calendar": "calendar.json",
+        "/api/status": "status.json",
+        "/api/tickers": "tickers.json",
+        "/api/data/audit": "audit.json",
+        "/api/sources": "sources.json",
+        "/api/ai/analyses?code=XAUUSD&limit=10": "ai.json",  # the last AI analyses (complex one and interpretation)
+    }
+    for code, tfs in CANDLES.items():
+        for tf in tfs:
+            out[f"/api/instruments/{code}/candles?tf={tf}"] = f"candles-{code}-{tf}.json"
+    return {u: n for u, n in out.items() if names is None or n in names}
+
+
+def collect(client, names: set[str] | None = None) -> tuple[dict[str, str], list[str]]:
+    """Every snapshot file as compact JSON text ({name: text}) — the PC's private settings removed."""
+    files, problems = {}, []
+    for url, name in targets(names).items():
+        resp = client.get(url)
+        if resp.status_code != 200:
+            problems.append(f"{url}: {resp.status_code} {resp.text[:120]}")
+            continue
+        body = resp.json()
+        if name == "sources.json":
+            body = {k: v for k, v in body.items() if k not in PRIVATE}
+        files[name] = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+    return files, problems
+
+
 def export(out_dir: Path, run_cycle: bool = False) -> list[str]:
     from fastapi.testclient import TestClient
 
@@ -38,27 +70,9 @@ def export(out_dir: Path, run_cycle: bool = False) -> list[str]:
     client = TestClient(app)  # no `with`: the scheduler and the desktop lifespan stay off
     data = out_dir / "data"
     data.mkdir(parents=True, exist_ok=True)
-    targets = {
-        "/api/markets": "markets.json",
-        "/api/calendar": "calendar.json",
-        "/api/status": "status.json",
-        "/api/tickers": "tickers.json",
-        "/api/data/audit": "audit.json",
-        "/api/sources": "sources.json",
-    }
-    for code, tfs in CANDLES.items():
-        for tf in tfs:
-            targets[f"/api/instruments/{code}/candles?tf={tf}"] = f"candles-{code}-{tf}.json"
-    problems = []
-    for url, name in targets.items():
-        resp = client.get(url)
-        if resp.status_code != 200:
-            problems.append(f"{url}: {resp.status_code} {resp.text[:120]}")
-            continue
-        body = resp.json()
-        if name == "sources.json":
-            body = {k: v for k, v in body.items() if k not in PRIVATE}
-        (data / name).write_text(json.dumps(body, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    files, problems = collect(client)
+    for name, text in files.items():
+        (data / name).write_text(text, encoding="utf-8")
     return problems
 
 

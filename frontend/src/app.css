@@ -1564,6 +1564,7 @@ a.tile:hover .tile-go {
   color: #1d4ed8;
   background: var(--accent-bg);
 }
+.qb-indicative,
 .qb-proxy {
   color: var(--warn);
   background: var(--warn-bg);
@@ -1697,9 +1698,12 @@ a.tile:hover .tile-go {
 .src-ok {
   background: var(--pos-strong);
 }
-.src-degraded {
+.src-delayed,
+.src-stale,
+.src-outage {
   background: #f59e0b;
 }
+.src-unavailable,
 .src-down {
   background: var(--neg-strong);
 }
@@ -1806,4 +1810,82 @@ a.tile:hover .tile-go {
     grid-template-columns: 44px 42px minmax(0, 1fr) 10px;
     gap: 8px;
   }
+}
+
+/* AI (Groq Free) — interpretation of FTI's own numbers */
+.ai-meta {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+.ai-points {
+  margin: 4px 0 10px;
+  padding-left: 18px;
+}
+.ai-points li + li {
+  margin-top: 4px;
+}
+.ai-ref {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 5px;
+  margin-right: 3px;
+  cursor: help;
+}
+.ai-facts,
+.ai-raw {
+  margin: 10px 0;
+  font-size: 13.5px;
+}
+.ai-facts summary,
+.ai-raw summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.ai-facts ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+.ai-facts li + li {
+  margin-top: 6px;
+}
+.ai-facts small,
+.ai-fact-text {
+  color: var(--muted);
+}
+.ai-fact-text {
+  display: block;
+  font-size: 12px;
+}
+/* complex AI analysis: recommendation and scenarios */
+.ai-rec {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+.ai-scen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  margin: 10px 0;
+}
+.ai-scen-box {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.ai-scen-box p {
+  margin: 0 0 6px;
+}
+.btn:disabled,
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }

@@ -102,6 +102,9 @@ class NewsItem(Base):
     classifier_version: Mapped[int] = mapped_column(default=0)
     language: Mapped[str] = mapped_column(String(4), default="en", server_default="en")
     title_cs: Mapped[str | None] = mapped_column(String(512), nullable=True)  # Czech headline (original or machine translation)
+    # where published_at comes from: "published" = the source's own publication time, "gdelt_seen" = when GDELT first
+    # saw the article (GDELT gives no publication time), "fetched" = the source gave no time, FTI's fetch time stands in
+    time_basis: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
 class CentralBankEvent(Base):
@@ -230,6 +233,45 @@ class PriceBar(Base):
     c: Mapped[float] = mapped_column(Float)
     v: Mapped[float | None] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(40), default="")
+
+
+class MarketBar(Base):
+    """OHLC history kept SEPARATELY per data provider (since 2026-11-01). One row per instrument, provider,
+    timeframe and bar start, so one provider can never overwrite another's history (the legacy table
+    price_bars had one row per instrument/timeframe/time for all providers together and stays frozen as it was).
+    A missing bar is simply absent — never filled in (gaps are computed on read, see store.gaps)."""
+
+    __tablename__ = "market_bars"
+    __table_args__ = (UniqueConstraint("code", "provider", "tf", "t", name="uq_market_bar"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), index=True)  # FTI instrument (identity in app/data/universe.py)
+    provider: Mapped[str] = mapped_column(String(20), index=True)  # mt5 | dukascopy | kraken | ecb | fred | …
+    feed_symbol: Mapped[str] = mapped_column(String(40), default="")  # exact symbol at the provider (XAUUSD_ecn, XBTUSD …)
+    tf: Mapped[str] = mapped_column(String(4), index=True)
+    t: Mapped[int] = mapped_column(index=True)  # bar start, unix seconds UTC
+    o: Mapped[float] = mapped_column(Float)
+    h: Mapped[float] = mapped_column(Float)
+    l: Mapped[float] = mapped_column(Float)  # noqa: E741 (OHLC naming)
+    c: Mapped[float] = mapped_column(Float)
+    v: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume_kind: Mapped[str | None] = mapped_column(String(12), nullable=True)  # exchange | tick | None (no meaningful volume)
+    price_type: Mapped[str | None] = mapped_column(String(8), nullable=True)  # bid | ask | mid | trade | fixing | close | spot | yield
+    closed: Mapped[bool] = mapped_column(default=True)  # False while the bar is still forming
+    quality: Mapped[str | None] = mapped_column(String(16), nullable=True)  # LIVE / DELAYED / HISTORICAL / PROXY … at receipt
+    delay_s: Mapped[int | None] = mapped_column(nullable=True)  # known publication delay of the provider
+    received_at: Mapped[dt.datetime] = mapped_column(UtcDateTime(), default=utcnow)  # when FTI stored this version
+    origin: Mapped[str] = mapped_column(String(120), default="")  # broker/server, dataset, or "restored from backup …"
+
+
+class SchemaMigration(Base):
+    """Data migrations that ran once (name, when, what they did) — so each runs exactly once and is traceable."""
+
+    __tablename__ = "schema_migrations"
+
+    name: Mapped[str] = mapped_column(String(80), primary_key=True)
+    applied_at: Mapped[dt.datetime] = mapped_column(UtcDateTime(), default=utcnow)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class MarketScoreRecord(Base):

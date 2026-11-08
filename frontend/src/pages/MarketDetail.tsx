@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { AiPanel, AiTradePanel } from "../components/AiPanel";
 import { BiasChip, EventList, LivePrice, NewsList } from "../components/Bits";
 import { CandleChart } from "../components/CandleChart";
 import { Icon } from "../components/Icon";
@@ -75,6 +76,8 @@ export function MarketDetail({ code }: { code: string }) {
 
       {m.retail && <Retail m={m} />}
       <Breakdown m={m} />
+      <AiTradePanel code={m.code} i={8} />
+      <AiPanel code={m.code} i={9} />
 
       <p className="note">
         Přepočteno {formatDateTime(data.data.computed_at)}. {m.missing.length > 0 && `Bez dat: ${m.missing.join(", ")} — skóre je přepočtené z ostatních kategorií. `}

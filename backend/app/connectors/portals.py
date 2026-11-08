@@ -56,6 +56,7 @@ class PortalEntry:
     published_at: dt.datetime
     snippet: str
     language: str
+    time_basis: str = "published"  # "fetched" when the feed gives no time (FTI's fetch time stands in)
 
 
 def parse_feed(feed: Feed, content: bytes) -> list[PortalEntry]:
@@ -68,7 +69,8 @@ def parse_feed(feed: Feed, content: bytes) -> list[PortalEntry]:
             continue
         stamp = e.get("published_parsed") or e.get("updated_parsed")
         published = dt.datetime(*stamp[:6], tzinfo=dt.timezone.utc) if stamp else dt.datetime.now(dt.timezone.utc)
-        out.append(PortalEntry(feed.source, title, link, published, e.get("summary", "") or "", feed.language))
+        out.append(PortalEntry(feed.source, title, link, published, e.get("summary", "") or "", feed.language,
+                               "published" if stamp else "fetched"))
     return out
 
 

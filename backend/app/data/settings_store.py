@@ -42,11 +42,19 @@ DEFAULTS: dict = {
     },
     "ai": {
         # FTI costs nothing (user's rule): no paid AI. "none" = reports built by the deterministic engine;
-        # "local" = a free open-source model on this PC through Ollama (http://127.0.0.1:11434), if installed.
+        # "groq" = Groq FREE plan (key GROQ_API_KEY); "ollama" = a free open-source model on this PC, if installed.
         "provider": "none",
         "local_model": "",
         "auto_analyses": False,
+        # FTI's own ceilings on top of Groq Free (app/ai/guard.py); they can only be lowered, never raised past the hard caps
+        "daily_request_cap": 80,
+        "daily_token_cap": 100000,
+        "per_minute_cap": 6,
     },
+    # variant A: the PC sends its results to the user's own Cloudflare Worker (D1) for the phone; off until set up
+    "cloud": {"url": "", "enabled": False},
+    # preferred data provider per instrument, e.g. {"XAUUSD": "dukascopy"}; the others stay as fallbacks with their own history
+    "preferred_feeds": {},
     "risk": {"account_size": 10000.0, "account_ccy": "USD", "risk_pct": 1.0, "daily_limit_pct": 3.0, "weekly_limit_pct": 6.0},
     "events": {"no_trade_minutes_before": 60},
     "watchlist": ["XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "US500", "US100", "USOIL", "BTCUSD"],

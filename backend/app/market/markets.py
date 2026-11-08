@@ -31,7 +31,7 @@ BY_CODE = {i["code"]: i for i in INSTRUMENTS}
 
 # Which headlines belong to which instrument (title in English + Czech translation).
 NEWS_TAGS = {
-    "XAUUSD": r"\bgold\b|\bbullion\b|\bxau\b|\bzlat",
+    "XAUUSD": r"\bgold\b(?![\s-]+(?:coast|medals?|medallist|cup)\b)|\bbullion\b|\bxau\b|\bzlat",  # as the classifier
     "EURUSD": r"\beuro\b|\becb\b|\blagarde\b|\beurozone\b|\beuro area\b|\beur/usd\b|\beurusd\b|\bgerman|\bECB\b|\beurozón",
     "GBPUSD": r"\bpound\b|\bsterling\b|\bboe\b|\bbank of england\b|\bbailey\b|\bgbp\b|\bbritain\b|\buk\b|\blibr",
     "USDJPY": r"\byen\b|\bboj\b|\bbank of japan\b|\bueda\b|\bjapan|\bjpy\b|\bjaponsk",
@@ -129,6 +129,12 @@ def small_traders(rows: list[dict] | None, long_key: str = "small_long", short_k
     return pct[-1], round(pct[-1] - pct[-5], 1), rows[-1]["date"]
 
 
+def _newest_known_first(h: dict) -> tuple:
+    """Sort key: items with a known time newest first, then items whose source gave no publication time (only
+    FTI's fetch time is known, so they are not shown as the newest)."""
+    return (h.get("time_basis") == "fetched", -dt.datetime.fromisoformat(h["published_at"]).timestamp())
+
+
 def is_technical(h: dict) -> bool:
     from app.connectors.portals import TECHNICAL_SOURCES
 
@@ -139,8 +145,8 @@ def technical_outlooks(headlines: list[dict], code: str, limit: int = 4) -> list
     """Technical analyses of this market written by public portals (newest first)."""
     own = re.compile(NEWS_TAGS[code], re.IGNORECASE)
     hits = [h for h in headlines if is_technical(h) and own.search(f"{h.get('title_en') or ''} {h.get('title') or ''}")]
-    hits.sort(key=lambda h: h["published_at"], reverse=True)
-    return [{k: h.get(k) for k in ("title", "source", "url", "published_at", "translated")} for h in hits[:limit]]
+    hits.sort(key=_newest_known_first)
+    return [{k: h.get(k) for k in ("title", "title_en", "source", "url", "published_at", "time_basis", "translated", "translation_failed")} for h in hits[:limit]]
 
 
 def instrument_news(headlines: list[dict], code: str, limit: int = 5) -> list[dict]:
@@ -151,8 +157,8 @@ def instrument_news(headlines: list[dict], code: str, limit: int = 5) -> list[di
         text = f"{h.get('title_en') or ''} {h.get('title') or ''}"
         if rx.search(text) and not is_technical(h):
             hits.append((0 if own.search(text) else 1, h))
-    ordered = [h for _, h in sorted(hits, key=lambda x: (x[0], -dt.datetime.fromisoformat(x[1]["published_at"]).timestamp()))]
-    return [{k: h.get(k) for k in ("title", "source", "url", "published_at", "translated")} for h in ordered[:limit]]
+    ordered = [h for _, h in sorted(hits, key=lambda x: (x[0], _newest_known_first(x[1])))]
+    return [{k: h.get(k) for k in ("title", "title_en", "source", "url", "published_at", "time_basis", "translated", "translation_failed")} for h in ordered[:limit]]
 
 
 def card(inst: dict, result: dict, price: dict | None, trend: str | None, extra: dict | None = None) -> dict:
@@ -236,8 +242,9 @@ def highlights(key_news: list[dict], cards: list[dict], limit: int = 5) -> list[
         if key in seen:
             continue
         seen.add(key)
-        out.append({k: n.get(k) for k in ("title", "source", "url", "published_at", "translated", "market", "impact")})
-    out.sort(key=lambda n: n["published_at"], reverse=True)
+        out.append({k: n.get(k) for k in ("title", "title_en", "source", "url", "published_at", "time_basis", "translated",
+                                           "translation_failed", "market", "impact")})
+    out.sort(key=_newest_known_first)
     return out[:limit]
 
 

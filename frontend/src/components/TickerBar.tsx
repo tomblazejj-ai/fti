@@ -33,6 +33,7 @@ export function TickerBar() {
               {closedNow && <MarketChip m={q.market} />}
               {q.proxy && <span className="tick-d" title={q.kind_cs}>proxy</span>}
               {q.reference && <span className="tick-d" title={q.kind_cs}>referenční</span>}
+              {q.indicative && <span className="tick-d" title={q.kind_cs}>orientační</span>}
               {!q.live && !closedNow && <span className="tick-d">{q.quote_time_cs ?? "denní"}</span>}
             </span>
           );

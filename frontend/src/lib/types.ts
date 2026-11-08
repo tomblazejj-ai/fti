@@ -13,7 +13,7 @@ export interface MarketStateInfo {
 /** The last real price of an instrument and whether it is a tradable quote right now. */
 export interface LastQuote {
   price: number;
-  time: string;
+  time: string | null;
   time_cs: string;
   age_minutes: number;
   tradable_now: boolean;
@@ -23,6 +23,8 @@ export interface LastQuote {
   reference?: boolean;
   fetched_at?: string;
   timezone?: string;
+  indicative?: boolean;
+  received_at?: string;
 }
 
 export interface Quote {
@@ -40,6 +42,7 @@ export interface Quote {
   provider?: string;
   quote_time_cs?: string;
   reference?: boolean;
+  indicative?: boolean;
   time_verified?: boolean;
   itype_cs?: string;
 }
@@ -67,7 +70,7 @@ export type Tf = "M15" | "H1" | "H4" | "D1" | "W1";
 export type CandleRow = [number, number, number, number, number, number, number];
 
 /** Data-quality label of one value (backend app/data/quality.py). */
-export type QualityStatus = "LIVE" | "NEAR_REAL_TIME" | "DELAYED" | "HISTORICAL" | "STALE" | "UNAVAILABLE" | "PROXY";
+export type QualityStatus = "LIVE" | "NEAR_REAL_TIME" | "DELAYED" | "HISTORICAL" | "STALE" | "UNAVAILABLE" | "PROXY" | "INDICATIVE";
 
 export interface DataQuality {
   status: QualityStatus;
@@ -146,7 +149,7 @@ export interface ProbeRow {
 export interface SourceRow {
   key: string;
   name: string;
-  status: "ok" | "degraded" | "down" | "unknown";
+  status: "ok" | "delayed" | "stale" | "outage" | "unavailable" | "unknown";
   last_ok: string | null;
   last_error_at: string | null;
   last_error: string | null;
@@ -155,6 +158,15 @@ export interface SourceRow {
   last_ms: number | null;
   last_records: number | null;
   data_as_of: string | null;
+  /** outages only (no unsupported timeframes, no rejected data), counted since `counting_since` */
+  outage_count: number;
+  rejected_count: number;
+  last_rejected: string | null;
+  unsupported_count: number;
+  unsupported_tfs: string[];
+  last_quality: string | null;
+  expected_quality: string | null;
+  counting_since: string | null;
 }
 
 export interface Mt5Terminal {
@@ -228,7 +240,13 @@ export interface MarketNews {
   source: string;
   url: string;
   published_at: string;
+  /** where the time comes from: the source's publication time, GDELT's first sighting, or FTI's fetch time */
+  time_basis?: "published" | "gdelt_seen" | "fetched" | null;
   translated: boolean;
+  /** the machine translation changed a number, currency, percentage or scale — the original is shown instead */
+  translation_failed?: boolean;
+  /** the original headline (shown on hover when a translation is shown) */
+  title_en?: string;
 }
 
 export interface MarketCard {
@@ -298,4 +316,112 @@ export interface CalendarAll {
   timezone: string;
   sources: string[];
   computed_at: string;
+}
+
+/* ---- AI (Groq Free): it only interprets FTI's engine output; every number is checked against the facts ---- */
+
+export interface AiFact {
+  id: string;
+  co: string;
+  hodnota: string | number | null;
+  zdroj: string;
+  k?: string;
+  text?: string;
+  volatile?: boolean;
+  /** area of the common analytical context (trh, technika, fundament …) */
+  oblast?: string;
+  /** where the time of a news fact comes from (publication / GDELT capture / FTI fetch) */
+  puvod_casu?: string;
+}
+
+export interface AiPoint {
+  text: string;
+  fakta: string[];
+}
+
+export interface AiValidation {
+  ok: boolean;
+  schema: string[];
+  unknown_facts: string[];
+  unknown_numbers: string[];
+  /** rules a trading scenario must meet (confirmation and invalidation …) */
+  rules?: string[];
+  /** FTI's independent check: problems in texts that could not be removed */
+  attribution?: string[];
+  /** points the independent check removed (a number, direction or correlation that did not belong there) */
+  removed?: { text: string; problem: string }[];
+}
+
+export interface AiStage {
+  role: string;
+  provider: string;
+  model: string;
+  validation: AiValidation | null;
+  facts_used: string[];
+  tokens: { in: number; out: number };
+  seconds: number;
+}
+
+export interface AiAnalysis {
+  id: number;
+  task: string;
+  code: string | null;
+  created_at: string;
+  model: string | null;
+  reason: string | null;
+  engine_computed_at: string | null;
+  output: Record<string, unknown> | null;
+  facts: AiFact[] | null;
+  validation: AiValidation | null;
+  tokens: { in: number; out: number } | null;
+  confidence: string | null;
+  stages?: AiStage[] | null;
+  providers?: string[] | null;
+  seconds?: number | null;
+  missing?: string[] | null;
+}
+
+export interface AiRunResult {
+  status: "ok" | "cached" | "cooldown" | "unavailable" | "invalid" | "not_ready";
+  text: string;
+  analysis?: AiAnalysis | null;
+  until?: string | null;
+  code?: string;
+}
+
+export interface AiGroqStatus {
+  provider: string;
+  key_set: boolean;
+  state: string;
+  text: string;
+  until: string | null;
+  auto_analyses: boolean;
+  usage: { requests: number; tokens: number; failed: number; cap: number; token_cap: number; per_minute_cap: number; reserve_from: number };
+  models: Record<string, { paused_until: string | null; reason: string | null; limits: Record<string, number | string> | null }>;
+  limits_changed: { model: string; what: string; old: number; new: number; at: string } | null;
+  terms_checked: string;
+  cost: string;
+}
+
+export interface AiTaskInfo {
+  id: string;
+  name: string;
+  ready: boolean;
+  why_not: string | null;
+  cooldown_min: number;
+}
+
+export interface AiStatus {
+  provider: string;
+  groq: AiGroqStatus;
+  tasks: AiTaskInfo[];
+}
+
+export interface AiTestResult {
+  ok: boolean;
+  text: string;
+  models?: string[];
+  seconds?: number;
+  limits?: Record<string, number>;
+  until?: string | null;
 }

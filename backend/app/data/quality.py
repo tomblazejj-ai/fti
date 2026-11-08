@@ -7,6 +7,7 @@ HISTORICAL     periodic statistics (weekly COT, monthly CPI, quarterly GDP) insi
 STALE          older than the source's normal rhythm allows: the source failed or stopped
 UNAVAILABLE    no data at all
 PROXY          a stand-in for the real instrument (PAXG token for gold, a crypto exchange's FX quote)
+INDICATIVE     the real instrument, but the source names neither the quote time nor its origin (orientační)
 
 The rule: a value is never shown as LIVE unless it is a live quote, and an old value is never
 shown as current — it is STALE with its real date.
@@ -16,8 +17,8 @@ from __future__ import annotations
 
 import datetime as dt
 
-LIVE, NRT, DELAYED, HISTORICAL, STALE, UNAVAILABLE, PROXY = (
-    "LIVE", "NEAR_REAL_TIME", "DELAYED", "HISTORICAL", "STALE", "UNAVAILABLE", "PROXY")
+LIVE, NRT, DELAYED, HISTORICAL, STALE, UNAVAILABLE, PROXY, INDICATIVE = (
+    "LIVE", "NEAR_REAL_TIME", "DELAYED", "HISTORICAL", "STALE", "UNAVAILABLE", "PROXY", "INDICATIVE")
 
 LABELS_CS = {
     LIVE: "živě",
@@ -27,6 +28,7 @@ LABELS_CS = {
     STALE: "zastaralé",
     UNAVAILABLE: "nedostupné",
     PROXY: "náhrada (proxy)",
+    INDICATIVE: "orientační",
 }
 
 # rhythm -> (max age for the "fresh" label, max age before STALE, fresh label)

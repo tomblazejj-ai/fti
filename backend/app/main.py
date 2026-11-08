@@ -6,12 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app import scheduler
+from app.ai.redact import install_log_filter
 from app.api.routes_dashboard import router as dashboard_router
 from app.api.routes_fti import router as fti_router
 from app.api.routes_instruments import router as instruments_router
 from app.db import init_db
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+install_log_filter()  # no API key can ever end up in a log, whatever logs it
 
 
 def _load_health() -> None:

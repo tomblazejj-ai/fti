@@ -33,7 +33,27 @@ def _run_cycle_job() -> None:
         logger.exception("Scheduled ingestion cycle failed")
     finally:
         _persist_health(session)
+        _ai_after_cycle(session)
         session.close()
+        _cloud_sync(light=False)
+
+
+def _cloud_sync(light: bool) -> None:
+    """Variant A: send the results to the user's own Cloudflare Worker (only when set up). Never breaks the job."""
+    from app.cloud import sync
+
+    sync.after_cycle(light=light)
+
+
+def _ai_after_cycle(session) -> None:
+    """Event-driven AI (only when the user switched automatic analyses on). Never breaks the cycle."""
+    from app.ai import triggers
+
+    try:
+        triggers.after_cycle(session)
+    except Exception:  # noqa: BLE001 — AI is an overlay: FTI works the same without it
+        logger.exception("AI after the cycle failed")
+        session.rollback()
 
 
 def _persist_health(session) -> None:
@@ -53,6 +73,29 @@ def _market_job() -> None:
     finally:
         _persist_health(session)
         session.close()
+        _cloud_sync(light=True)
+        _collect_history()
+        _feed_check()
+
+
+def _collect_history() -> None:
+    """Keep the Dukascopy history of XAUUSD growing even while MT5 is the feed shown. Never breaks the job."""
+    from app.data import bars
+
+    try:
+        bars.collect_history()
+    except Exception:  # noqa: BLE001 — collecting a second provider's history must never disturb the data refresh
+        logger.exception("Collecting provider history failed")
+
+
+def _feed_check() -> None:
+    """One more day of the long-term MT5 × Dukascopy comparison (only when MT5 is on). Never breaks the job."""
+    from app.data import feedcheck
+
+    try:
+        feedcheck.step()
+    except Exception:  # noqa: BLE001 — a cross-check must never disturb the data refresh
+        logger.exception("Feed cross-check failed")
 
 
 def start() -> None:

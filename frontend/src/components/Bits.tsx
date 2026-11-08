@@ -29,6 +29,7 @@ const Q_LABEL: Record<QualityStatus, string> = {
   STALE: "zastaralé",
   UNAVAILABLE: "nedostupné",
   PROXY: "proxy",
+  INDICATIVE: "orientační",
 };
 
 /** Data-quality chip: what kind of data this is and how fresh — text, not only colour. */
@@ -66,6 +67,7 @@ export function MarketChip({ m }: { m?: MarketStateInfo | null }) {
 export function LastQuoteLine({ q }: { q?: LastQuote | null }) {
   if (!q || q.tradable_now) return null;
   if (q.reference) return <span className="lq">referenční hodnota ({q.kind_cs}), {q.time_cs} — ne aktuální cena trhu</span>;
+  if (q.indicative) return <span className="lq">orientační cena — {q.time_cs}, ne obchodovatelná kotace</span>;
   return <span className="lq">poslední kotace {q.time_cs}{q.time_verified === false ? " (čas neověřen)" : ""}</span>;
 }
 
@@ -82,6 +84,7 @@ export function LivePrice({ m, big = false }: { m: MarketCard; big?: boolean }) 
       {p.live && <span className="live-dot" title="živá cena" aria-label="živá cena" />}
       {!big && m.price?.market && m.price.market.state !== "OPEN" && <MarketChip m={m.price.market} />}
       {!big && m.price?.last_quote?.reference && <span className="qb qb-delayed" title={m.price.last_quote.kind_cs}>referenční</span>}
+      {!big && m.price?.last_quote?.indicative && <span className="qb qb-indicative" title={m.price.quality?.text}>orientační</span>}
       {big && (
         <span className="lprice-meta">
           <MarketChip m={m.price?.market} /> <QualityBadge q={m.price?.quality} source={m.price?.source} />{" "}
@@ -98,12 +101,15 @@ export function NewsList({ items, start = 0, tags }: { items: MarketNews[]; star
     <ul className="news">
       {items.map((n, i) => (
         <li key={n.url} className="rise" style={{ "--i": start + i } as CSSProperties}>
-          <a href={n.url} target="_blank" rel="noreferrer">
+          <a href={n.url} target="_blank" rel="noreferrer" title={n.translated && n.title_en ? `Originál: ${n.title_en}` : undefined}>
             {tags && <span className="news-tags">{tags(n)}</span>}
             <span className="news-title">{n.title}</span>
             <span className="news-meta">
               {n.source} · {relativeTime(n.published_at)}
+              {n.time_basis === "gdelt_seen" && " (zachyceno GDELT, čas publikace neuveden)"}
+              {n.time_basis === "fetched" && " (čas stažení — zdroj čas publikace neuvádí)"}
               {n.translated && " · strojový překlad"}
+              {n.translation_failed && " · originál (strojový překlad nespolehlivý — měnil čísla)"}
               <Icon name="external" size={12} />
             </span>
           </a>

@@ -1,8 +1,9 @@
-# Mobilní verze FTI zdarma na GitHub Pages — běží i když je PC vypnuté.
-# Každých 30 minut: stáhne data ze stejných zdrojů jako aplikace na PC, uloží snímek
-# (backend/app/export_static.py) a zveřejní webovou aplikaci, kterou jde v telefonu
-# přidat na plochu. Živé ceny zlata, EUR/USD a GBP/USD si telefon bere přímo z Krakenu.
-# Veřejné repozitáře mají GitHub Actions i Pages zdarma.
+# FTI bez zapnutého PC (krok C1). Každých 30 minut na serverech GitHubu:
+#   data ze stejných zdrojů jako aplikace na PC → výpočty → AI (Groq Free, jen při změně dat, nejvýš 6 komplexních
+#   analýz denně) → výsledky do cloudu FTI (Cloudflare Worker + D1, Free) a jako záloha na GitHub Pages.
+# Žádné heslo ke cloudu v GitHubu: odeslání se prokazuje krátkodobým tokenem GitHubu (OIDC), Worker ověřuje podpis,
+# repozitář a větev. Klíč Groq je šifrovaný GitHub Secret GROQ_API_KEY; bez něj vše běží, jen AI se přeskočí.
+# Veřejné repozitáře mají GitHub Actions i Pages zdarma; Cloudflare Workers + D1 jsou v bezplatném tarifu bez karty.
 name: Mobilni verze
 
 on:
@@ -65,11 +66,20 @@ jobs:
           key: fti-state-${{ github.run_id }}
           restore-keys: fti-state-
 
-      - name: Data a snímek pro telefon
+      - name: Nastavení cloudu (žádné tajné údaje)
+        working-directory: backend
+        run: |
+          cat > fti_settings.json <<'JSON'
+          {"ai": {"provider": "groq", "auto_analyses": true, "daily_request_cap": 80, "daily_token_cap": 100000, "per_minute_cap": 6},
+           "cloud": {"enabled": true, "url": "https://fti.tomblazejj.workers.dev"}}
+          JSON
+
+      - name: Data, výpočty a AI (stejný kód jako na PC)
         working-directory: backend
         env:
           FTI_DISABLE_SCHEDULER: "1"
-        run: python -m app.export_static ../site --cycle
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: python -m app.cloud.run ../site --compute
 
       - name: Uložit stav pro příští běh
         if: always()
@@ -79,6 +89,16 @@ jobs:
             backend/fti.db
             backend/cache
           key: fti-state-${{ github.run_id }}
+
+      - name: Výsledky do cloudu FTI (Cloudflare D1, přihlášení tokenem GitHubu)
+        id: cloud
+        continue-on-error: true
+        working-directory: backend
+        run: |
+          TOKEN=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=fti-cloud" \
+            | python -c "import json, sys; print(json.load(sys.stdin)['value'])")
+          echo "::add-mask::$TOKEN"
+          FTI_SYNC_TOKEN="$TOKEN" python -m app.cloud.run ../site --upload
 
       - uses: actions/setup-node@v4
         with:
@@ -97,8 +117,13 @@ jobs:
         with:
           path: site
 
+      - name: Cloud FTI nedostal výsledky — GitHub to ohlásí jako chybný běh
+        if: steps.cloud.outcome == 'failure'
+        run: exit 1
+
   deploy:
     needs: build
+    if: ${{ !cancelled() }}  # the backup site goes out even when only the cloud upload failed
     runs-on: ubuntu-latest
     environment:
       name: github-pages

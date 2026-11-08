@@ -47,6 +47,7 @@ ITYPE_CS = {
 # what the numbers of one FEED are (app/data/bars.py feed_identity)
 KIND_CS = {
     "broker_quote": "kotace brokera",
+    "delayed_bank_quote": "kotace švýcarské banky Dukascopy (bid) se zpožděním ~1 h",
     "cfd": "CFD brokera",
     "exchange_quote": "kotace burzy",
     "crypto_fx_quote": "kotace měnového páru na kryptoburze (proxy)",
@@ -136,11 +137,13 @@ def _cfd(code: str, underlying: str, name: str, quote: str, unit: str, digits: i
 INSTRUMENTS: list[Instrument] = [
     # --- Gold & silver: spot metal (OTC) is separate from the token -----------------------------
     Instrument("XAUUSD", "XAU/USD", "Zlato (spot)", "commodity", "spot_metal", "USD za trojskou unci", "USD", "XAU", 2, 0.01, 100,
-               feeds=(("mt5", "XAUUSD"), ("oanda", "XAU_USD")),
+               feeds=(("mt5", "XAUUSD"), ("oanda", "XAU_USD"), ("dukascopy", "XAUUSD")),
                venue="spotový trh se zlatem (OTC, Londýn)", currencies=("USD",),
                cot="GOLD - COMMODITY EXCHANGE INC.", cot_report="disaggregated", fundamental="gold", news=_GOLD_NEWS,
                notes=("Spotové zlato se obchoduje mimo burzu (OTC): každá živá kotace je kotace konkrétního brokera nebo banky. "
-                      "Bez připojeného zdroje (OANDA demo nebo MT5) FTI cenu XAUUSD nezobrazuje. Denní cena NBP se jako cena "
+                      "Bez brokera (MT5 / OANDA) bere FTI zpožděné kotace banky Dukascopy (ověřeno 1. 11. 2026 proti "
+                      "Purple XAUUSD_ecn: medián rozdílu 0,10 USD, časy shodné na minutu), a když nedodává, orientační cenu "
+                      "gold-api.com bez času kotace. Denní cena NBP se jako cena "
                       "XAUUSD nepoužívá: ověřeno 1. 11. 2026, že se zpožďuje o 1–2 obchodní dny (NBP 30. 10. = 4 051,59 USD, "
                       "skutečný páteční závěr ~3 880 USD). Slouží jen pro dlouhodobou sezónnost.",)),
     Instrument("PAXGUSD", "PAXG/USD", "PAX Gold (token)", "crypto", "token", "USD za 1 token (≈ 1 trojská unce)", "USD", "PAXG",

@@ -143,6 +143,7 @@ class NewsSignal:
 
     factor_tag: str
     points: list[NewsDataPoint] = field(default_factory=list)
+    unknown_age: int = 0  # items left out: the source gave no publication time, so their age is unknown
 
     @property
     def item_count(self) -> int:
@@ -179,7 +180,15 @@ def _as_aware_utc(value: dt.datetime) -> dt.datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=dt.timezone.utc)
 
 
+def _unknown_age_note(count: int) -> str:
+    from app.news.timebasis import unknown_age_note
+
+    return unknown_age_note(count)
+
+
 def _weighted_news(signal: NewsSignal | None, now: dt.datetime, horizon: str) -> tuple[float, list[str], list[int], str]:
+    if signal is not None and not signal.points and signal.unknown_age:
+        return 0.0, [_unknown_age_note(signal.unknown_age)], [], "partial"
     if signal is None or not signal.points:
         return 0.0, [], [], "partial"
     now = _as_aware_utc(now)
@@ -191,7 +200,7 @@ def _weighted_news(signal: NewsSignal | None, now: dt.datetime, horizon: str) ->
     total_weight = sum(weights)
     weighted_avg = sum(w * p.sentiment for w, p in zip(weights, signal.points)) / total_weight if total_weight else 0.0
     recent = sorted(signal.points, key=lambda p: p.published_at, reverse=True)[:3]
-    reasons = [p.description for p in recent]
+    reasons = [p.description for p in recent] + ([_unknown_age_note(signal.unknown_age)] if signal.unknown_age else [])
     return clamp(weighted_avg, -1.0, 1.0), reasons, signal.item_ids, "ok"
 
 

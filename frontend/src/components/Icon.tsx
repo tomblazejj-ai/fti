@@ -17,6 +17,7 @@ const PATHS: Record<string, string> = {
   arrowDown: "M12 5v14 M19 12l-7 7-7-7",
   users: "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M2 21a7 7 0 0 1 14 0 M17 4a4 4 0 0 1 0 7 M19 21a6 6 0 0 0-3-5",
   layers: "M12 3l9 5-9 5-9-5z M3 13l9 5 9-5",
+  spark: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z",
 };
 
 export type IconName = keyof typeof PATHS;

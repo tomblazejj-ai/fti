@@ -10,6 +10,7 @@ tests/test_grouping.py.
 from __future__ import annotations
 
 from app.models import NewsItem
+from app.news import translate
 
 IMPACT_THRESHOLD = 0.1  # same threshold as PillarResult.impact
 
@@ -23,10 +24,13 @@ def _impact(score: float) -> str:
 
 
 def _czech(item: NewsItem) -> tuple[str, bool]:
-    """(headline to show, is it a machine translation)"""
-    if item.title_cs:
-        return item.title_cs, item.language != "cs"
-    return item.title, False
+    """(headline to show, is it a machine translation) — a translation that changed a number is not shown."""
+    title, translated, _ = translate.shown_title(item.title, item.title_cs, item.language)
+    return title, translated
+
+
+def _translation_failed(item: NewsItem) -> bool:
+    return translate.shown_title(item.title, item.title_cs, item.language)[2]
 
 
 def _report(item: NewsItem) -> dict:
@@ -36,9 +40,10 @@ def _report(item: NewsItem) -> dict:
         "title": title,
         "title_original": item.title,
         "translated": translated,
+        "translation_failed": _translation_failed(item),
         "source": item.source,
         "url": item.url or None,
-        "published_at": item.published_at,
+        "published_at": item.published_at, "time_basis": item.time_basis,
     }
 
 
@@ -68,10 +73,11 @@ def group_into_events(items: list[NewsItem], factor_to_pillar: dict[str, str], i
                 "headline": headline,
                 "headline_original": original.title,
                 "translated": translated,
+                "translation_failed": _translation_failed(original),
                 "language": original.language,
                 "source": original.source,
                 "url": original.url or None,
-                "published_at": original.published_at,
+                "published_at": original.published_at, "time_basis": original.time_basis,
                 "instrument_tags": original.instrument_tags,
                 "factors": [{"factor": f, "pillar": factor_to_pillar[f], "sentiment": original.sentiment_scores.get(f, 0.0)} for f in relevant_factors],
                 "impact": _impact(net),
@@ -79,5 +85,6 @@ def group_into_events(items: list[NewsItem], factor_to_pillar: dict[str, str], i
                 "reports": [_report(r) for r in reports],
             }
         )
-    events.sort(key=lambda e: e["published_at"], reverse=True)
+    # known times newest first; items with only FTI's fetch time (no publication time) after them
+    events.sort(key=lambda e: (e.get("time_basis") != "fetched", e["published_at"]), reverse=True)
     return events

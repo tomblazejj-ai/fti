@@ -27,6 +27,11 @@ def quote(code: str, now: dt.datetime | None = None) -> dict:
             break
     base = {"code": inst.code, "symbol": inst.symbol, "name": inst.name, "digits": inst.digits if inst.digits < 4 else 4}
     if bs is None or not bs.ok:
+        from app.data import indicative
+
+        ind = indicative.quote(code, now)  # real spot gold/silver, but without a quote time: labelled ORIENTAČNÍ
+        if ind is not None:
+            return ind
         return {**base, "available": False, "market": bs.market if bs else {}, "notes": (bs.notes if bs else [])[:2]}
     d1 = bs if bs.tf == "D1" else bars_mod.get_bars(code, "D1", now=now)
     prev = None

@@ -24,8 +24,11 @@ import datetime as dt
 import io
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
+
+from app.config import BACKEND_DIR
 
 UA = {"User-Agent": "FTI/1.0 (personal market analysis; contact via GitHub tomblazejj-ai/fti)"}
 _cache: dict[str, tuple[float, object]] = {}
@@ -114,9 +117,36 @@ TREASURY_SERIES = {"DGS2": ("daily_treasury_yield_curve", "2 Yr"), "DGS10": ("da
                    "DFII5": ("daily_treasury_real_yield_curve", "5 YR")}
 
 
+# home.treasury.gov answers each yearly file in ~18 s, whatever its size. One file holds every series of its curve
+# (DGS2, DGS10 and DGS3MO share one), so it is fetched once per curve and year, not once per series. A finished year
+# no longer changes: it is kept on disk and fetched again only after FINISHED_YEAR_DAYS (in case of a rare revision).
+TREASURY_CACHE = BACKEND_DIR / "cache" / "treasury"
+FINISHED_YEAR_DAYS = 30
+CURRENT_YEAR_TTL = 3 * 3600
+_year_locks: dict[tuple[str, int], threading.Lock] = {}
+
+
 def _treasury_year(kind: str, year: int) -> list[dict]:
-    r = _get(TREASURY_URL.format(year=year), params={"type": kind, "field_tdr_date_value": year, "page": "", "_format": "csv"})
-    return list(csv.DictReader(io.StringIO(r.text)))
+    with _lock:
+        lock = _year_locks.setdefault((kind, year), threading.Lock())
+    with lock:  # two callers wanting the same file download it once
+        finished = year < dt.date.today().year
+        path = TREASURY_CACHE / f"{kind}_{year}.csv"
+        if finished and path.exists() and time.time() - path.stat().st_mtime < FINISHED_YEAR_DAYS * 86400:
+            return list(csv.DictReader(io.StringIO(path.read_text(encoding="utf-8"))))
+
+        def fetch():
+            return _get(TREASURY_URL.format(year=year), params={"type": kind, "field_tdr_date_value": year, "page": "",
+                                                                 "_format": "csv"}).text
+
+        text = _cached(f"treasury-year:{kind}:{year}", CURRENT_YEAR_TTL, fetch)
+        rows = list(csv.DictReader(io.StringIO(text)))
+        if finished and rows:
+            TREASURY_CACHE.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(text, encoding="utf-8")
+            tmp.replace(path)  # never a half-written file in the cache
+        return rows
 
 
 def treasury(series: str, years: int = 3) -> dict[str, float]:
@@ -126,8 +156,10 @@ def treasury(series: str, years: int = 3) -> dict[str, float]:
     def fetch():
         out = {}
         this = dt.date.today().year
-        for y in range(this - years + 1, this + 1):
-            for row in _treasury_year(kind, y):
+        with ThreadPoolExecutor(max_workers=3) as pool:  # missing years three at a time, gently
+            files = list(pool.map(lambda y: _treasury_year(kind, y), range(this - years + 1, this + 1)))
+        for rows in files:
+            for row in rows:
                 try:
                     d = dt.datetime.strptime(row["Date"], "%m/%d/%Y").date().isoformat()
                     out[d] = float(row[col])
