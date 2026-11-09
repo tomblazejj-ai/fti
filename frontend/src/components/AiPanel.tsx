@@ -24,7 +24,7 @@ export function runText(r: AiRunResult): string {
   return `${r.text}${r.until ? ` Znovu ${formatDateTime(r.until)}.` : ""}`;
 }
 
-/** The AI interpretation of one market (Groq Free). It only explains what FTI's engine computed;
+/** The AI interpretation of one market (Gemini Free, backup Groq Free). It only explains what FTI's engine computed;
  * every number is checked against the engine's facts, and an answer that fails is not shown as verified. */
 export function AiPanel({ code, i = 6 }: { code: string; i?: number }) {
   const hist = useAsync(() => api.aiAnalyses(code, "market"), [code]);
@@ -57,7 +57,7 @@ export function AiPanel({ code, i = 6 }: { code: string; i?: number }) {
   };
   return (
     <Card title="Výklad AI" icon={<Icon name="spark" size={16} />} i={i} id="ai"
-          extra={<span className="card-note">Groq Free · vykládá jen výpočty FTI</span>}>
+          extra={<span className="card-note">Gemini Free / Groq Free · vykládá jen výpočty FTI</span>}>
       {status.error && !status.data ? (
         <Empty>AI výklad teď není k dispozici — zbytek FTI funguje normálně.</Empty>
       ) : (
@@ -187,7 +187,7 @@ interface TradeOut {
 
 const REC_CLASS: Record<string, string> = { LONG: "bias-pos", SHORT: "bias-neg", "NO TRADE": "bias-zero" };
 const ROLE_CS: Record<string, string> = { makro: "Makro a fundament", technika: "Technika", synteza: "Hlavní analytik" };
-const AREA_CS: Record<string, string> = {
+export const AREA_CS: Record<string, string> = {
   trh: "Trh a cena", technika: "Technika", fundament: "Fundament (FRED, model FTI)", engine: "Pravidlový verdikt FTI",
   dolar: "Dolar (DXY)", mezitrh: "Mezitrh", pozice: "Pozice (COT)", volatilita: "Volatilita", kalendar: "Kalendář",
   zpravy: "Zprávy", sezonnost: "Sezónnost", kvalita: "Kvalita dat", specialista: "Závěry AI specialistů",
@@ -227,7 +227,7 @@ export function AiTradePanel({ code, i = 7 }: { code: string; i?: number }) {
   };
   return (
     <Card title="Komplexní AI analýza" icon={<Icon name="spark" size={16} />} i={i} id="ai-trade"
-          extra={<span className="card-note">více AI rolí · Groq Free · obchody zadáváš ty</span>}>
+          extra={<span className="card-note">více AI rolí · Gemini Free / Groq Free · obchody zadáváš ty</span>}>
       {a ? <TradeView a={a} /> : <Empty>{g ? "Komplexní analýza zatím nevznikla." : "Zjišťuji stav AI…"}</Empty>}
       <div className="form-row">
         <button type="button" className="btn-primary" onClick={run} disabled={busy || !ready}>

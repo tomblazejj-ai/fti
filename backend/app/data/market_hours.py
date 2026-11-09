@@ -74,6 +74,13 @@ def trading_week_start(t: int) -> int:
     return int((dt.datetime(monday.year, monday.month, monday.day, tzinfo=NY) - dt.timedelta(days=1, hours=7)).timestamp())
 
 
+def trading_month_start(t: int) -> int:
+    """Unix start of the trading month that contains t: the 1st 00:00 server time (New York + 7 h) = 17:00 New York on
+    the last day of the previous month — the broker's monthly candle (MN1), on the same grid as D1 and W1."""
+    d = trading_date(trading_day_start(t))
+    return int((dt.datetime(d.year, d.month, 1, tzinfo=NY) - dt.timedelta(hours=7)).timestamp())
+
+
 # --- holiday rules -----------------------------------------------------------------------------
 def easter(year: int) -> dt.date:
     """Gregorian Easter Sunday (anonymous algorithm)."""

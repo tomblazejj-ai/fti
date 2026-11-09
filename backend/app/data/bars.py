@@ -45,10 +45,10 @@ FEED_KIND = {
     "treasury": ("official_daily", "daily"),
     "dukascopy": ("delayed_bank_quote", "tick"),
 }
-DUKASCOPY_DAYS = {"M1": 2, "M5": 4, "M15": 7, "M30": 10, "H1": 14, "H4": 45, "D1": 200, "W1": 200}  # history it builds up
+DUKASCOPY_DAYS = {"M1": 2, "M5": 4, "M15": 7, "M30": 10, "H1": 14, "H4": 45, "D1": 200, "W1": 200, "MN1": 200}  # history it builds up
 # daily and weekly history older than this month from Dukascopy's monthly hour files (one file a month): 15 months
 # ≈ 320 trading days, enough for SMA200 with its slope — 200 days of minute files gave only ~140 trading days
-DUKASCOPY_MONTHS = {"D1": 15, "W1": 15}
+DUKASCOPY_MONTHS = {"D1": 15, "W1": 15, "MN1": 15}  # MN1 = the same daily candles grouped by month
 FEED_NAME = {
     "mt5": "MetaTrader 5 (broker)", "oanda": "OANDA v20", "kraken": "Kraken", "ecb": "ECB referenční kurzy",
     "fred": "FRED (St. Louis Fed)", "eia": "EIA (US Energy Information Administration)", "cboe": "CBOE",
@@ -394,7 +394,7 @@ def _fetch(provider: str, symbol: str, tf: str, inst: universe.Instrument, now: 
 
         if tf not in DUKASCOPY_DAYS:
             raise FeedError(f"Dukascopy: rámec {tf} FTI nepodporuje.")
-        sec = 86400 if tf in ("D1", "W1") else TF_MINUTES[tf] * 60
+        sec = 86400 if tf in ("D1", "W1", "MN1") else TF_MINUTES[tf] * 60
         months = DUKASCOPY_MONTHS.get(tf, 0)
         try:
             got, meta = _cached(("dukascopy", symbol, sec, DUKASCOPY_DAYS[tf], months), 300.0,
@@ -403,7 +403,12 @@ def _fetch(provider: str, symbol: str, tf: str, inst: universe.Instrument, now: 
             raise FeedError(str(exc)) from exc
         if not got:
             raise FeedPending("Dukascopy zatím nedodal žádná data (historie se doplňuje po několika souborech).")
-        return (dukascopy.keep_whole(dukascopy.weekly(got), 7 * 86400, meta.get("covered") or []) if tf == "W1" else got), meta
+        covered = meta.get("covered") or []
+        if tf == "W1":
+            return dukascopy.keep_whole(dukascopy.weekly(got), dukascopy.WEEK, covered), meta
+        if tf == "MN1":
+            return dukascopy.keep_whole(dukascopy.monthly(got), dukascopy.month_span, covered), meta
+        return got, meta
     raise FeedError(f"Neznámý zdroj {provider}")
 
 
@@ -647,7 +652,7 @@ def get_bars(code: str, tf: str, now: dt.datetime | None = None, store: bool = T
                                         f" · {meta.get('symbol') or symbol}")
         bs = BarSet(code, tf, bars, provider, meta.get("symbol") or symbol, source, kind, proxy, provider in DAILY_ONLY, q,
                     notes, tried, meta, mstate, lq)
-        if store and _first_use(key):
+        if store and tf != "MN1" and _first_use(key):  # MN1 = stored D1 grouped by month: nothing new to keep
             _store(bs)
         return bs
     q = quality.classify(None, now, "daily")

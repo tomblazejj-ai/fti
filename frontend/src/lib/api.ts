@@ -11,7 +11,7 @@ import type {
   MarketsResponse,
   ProbeRow,
   SourcesResponse,
-  TickersResponse, IntermarketResult, MarketRegime } from "./types";
+  TickersResponse, IntermarketResult, MarketRegime, GoldAnalysis, LiveCandles } from "./types";
 
 // Same-origin by default (the web build is served by FastAPI itself).
 let baseUrl = "";
@@ -106,6 +106,11 @@ export const api = {
   calendar: () => request<CalendarAll>("/api/calendar"),
   intermarket: (tf: string) => request<IntermarketResult>(`/api/intermarket/intel?tf=${tf}`),
   regime: () => request<MarketRegime>("/api/regime"),
+  /** gold's engine output (technique, verdict, scorecard, COT, seasonality …) — PC app only */
+  analysis: (code: string) => request<GoldAnalysis>(`/api/instruments/${code}/analysis`),
+  /** candles the live engine builds from ticks (M1 … D1) — PC app only */
+  liveCandles: (code: string, tf: string, limit = 500) =>
+    request<LiveCandles>(`/api/live/candles?code=${encodeURIComponent(code)}&tf=${tf}&limit=${limit}`),
   tickers: () => (STATIC ? staticTickers() : request<TickersResponse>("/api/tickers")),
   candles: (code: string, tf: string) => request<CandlesResponse>(`/api/instruments/${code}/candles?tf=${encodeURIComponent(tf)}`),
   audit: () => request<{ computed_at: string; rows: AuditRow[] }>("/api/data/audit"),
@@ -116,6 +121,7 @@ export const api = {
   mt5Test: () => post<{ ok: boolean; bars: number; symbol: string; broker: string; server: string }>("/api/mt5/test", {}),
   aiStatus: () => request<AiStatus>("/api/ai/status"),
   aiTest: () => post<AiTestResult>("/api/ai/test", {}),
+  aiTestGemini: () => post<AiTestResult>("/api/ai/test-gemini", {}),
   aiAnalyze: (task: string, code?: string) => post<AiRunResult>("/api/ai/analyze", { task, code }),
   aiAnalyses: (code: string, task?: string) =>
     STATIC

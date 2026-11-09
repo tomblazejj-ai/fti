@@ -47,9 +47,9 @@ export function ScoreGauge({ score, size = 120, label = true }: { score: number;
     <svg className={`gauge gauge-${t}`} width={size} height={(size * 96) / 120} viewBox="0 0 120 96" role="img" aria-label={`Skóre ${scoreText(score)} z 10`}>
       <defs>
         <linearGradient id="gauge-grad" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#f87171" />
-          <stop offset="0.5" stopColor="#cbd5e1" />
-          <stop offset="1" stopColor="#34d399" />
+          <stop offset="0" style={{ stopColor: "var(--down)" }} />
+          <stop offset="0.5" style={{ stopColor: "var(--border)" }} />
+          <stop offset="1" style={{ stopColor: "var(--up)" }} />
         </linearGradient>
       </defs>
       <path d="M12 60 A48 48 0 0 1 108 60" className="gauge-track" />
@@ -70,9 +70,9 @@ export function ScoreGauge({ score, size = 120, label = true }: { score: number;
 }
 
 const PAIR: Record<string, [string, string, string, string]> = {
-  EURUSD: ["€", "$", "#2563eb", "#0f766e"],
-  GBPUSD: ["£", "$", "#7c3aed", "#0f766e"],
-  USDJPY: ["$", "¥", "#0f766e", "#dc2626"],
+  EURUSD: ["€", "$", "var(--accent)", "var(--up)"],
+  GBPUSD: ["£", "$", "var(--warn)", "var(--up)"],
+  USDJPY: ["$", "¥", "var(--up)", "var(--down)"],
 };
 
 /** Small picture for every market: gold bar, oil drop, or the two currencies. */
@@ -80,28 +80,28 @@ export function MarketIcon({ code, size = 40 }: { code: string; size?: number })
   if (code === "XAUUSD") {
     return (
       <svg width={size} height={size} viewBox="0 0 40 40" className="micon" aria-hidden="true">
-        <circle cx="20" cy="20" r="19" fill="#fef3c7" />
-        <path d="M11 25 L14 15 H26 L29 25 Z" fill="#f59e0b" />
-        <path d="M14.8 17 H25.2 L25.8 19 H14.2 Z" fill="#fde68a" />
+        <circle cx="20" cy="20" r="19" style={{ fill: "var(--gold-bg)" }} />
+        <path d="M11 25 L14 15 H26 L29 25 Z" style={{ fill: "var(--zone-gold)" }} />
+        <path d="M14.8 17 H25.2 L25.8 19 H14.2 Z" style={{ fill: "var(--on-accent)" }} fillOpacity="0.45" />
       </svg>
     );
   }
   if (code === "USOIL") {
     return (
       <svg width={size} height={size} viewBox="0 0 40 40" className="micon" aria-hidden="true">
-        <circle cx="20" cy="20" r="19" fill="#e2e8f0" />
-        <path d="M20 9 C16 15 13 19 13 23 a7 7 0 0 0 14 0 C27 19 24 15 20 9 Z" fill="#1e293b" />
-        <path d="M17 23 a3 3 0 0 0 3 3" stroke="#94a3b8" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+        <circle cx="20" cy="20" r="19" style={{ fill: "var(--surface-2)" }} />
+        <path d="M20 9 C16 15 13 19 13 23 a7 7 0 0 0 14 0 C27 19 24 15 20 9 Z" style={{ fill: "var(--text)" }} />
+        <path d="M17 23 a3 3 0 0 0 3 3" style={{ stroke: "var(--text-muted)" }} strokeWidth="1.6" fill="none" strokeLinecap="round" />
       </svg>
     );
   }
-  const [a, b, ca, cb] = PAIR[code] ?? ["?", "?", "#64748b", "#64748b"];
+  const [a, b, ca, cb] = PAIR[code] ?? ["?", "?", "var(--text-muted)", "var(--text-muted)"];
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" className="micon" aria-hidden="true">
-      <circle cx="15" cy="16" r="12" fill={ca} />
-      <circle cx="26" cy="25" r="12" fill={cb} stroke="#fff" strokeWidth="2" />
-      <text x="15" y="20.5" textAnchor="middle" fontSize="12" fontWeight="800" fill="#fff">{a}</text>
-      <text x="26" y="29.5" textAnchor="middle" fontSize="12" fontWeight="800" fill="#fff">{b}</text>
+      <circle cx="15" cy="16" r="12" style={{ fill: ca }} />
+      <circle cx="26" cy="25" r="12" style={{ fill: cb, stroke: "var(--surface)" }} strokeWidth="2" />
+      <text x="15" y="20.5" textAnchor="middle" fontSize="12" fontWeight="800" style={{ fill: "var(--on-accent)" }}>{a}</text>
+      <text x="26" y="29.5" textAnchor="middle" fontSize="12" fontWeight="800" style={{ fill: "var(--on-accent)" }}>{b}</text>
     </svg>
   );
 }

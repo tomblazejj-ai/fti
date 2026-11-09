@@ -23,7 +23,7 @@ import threading
 
 from sqlalchemy import case, func, select
 
-from app.ai import groq
+from app.ai import gemini, groq
 from app.data import secrets, settings_store, store
 
 UTC = dt.timezone.utc
@@ -35,6 +35,12 @@ TPM_SHARE = 0.9
 BREAKER_MINUTES = (1, 5, 15, 60)
 STATE_KEY = "ai:guard"
 PROVIDER = "groq"
+FREE_PROVIDERS = ("gemini", "groq")  # the only providers FTI may call (0 Kč); the setting ai.provider says which goes first
+KEY_NAMES = {"gemini": gemini.KEY_NAME, "groq": groq.KEY_NAME}
+
+
+def provider_of(model: str) -> str:
+    return "gemini" if model in gemini.FREE_MODELS else "groq"
 
 REASONS = {
     "off": "AI je vypnutá v nastavení — FTI ukazuje rozbor z pravidel.",
@@ -130,7 +136,7 @@ def usage(session, now: dt.datetime | None = None, since: dt.datetime | None = N
     n, tok, failed = session.execute(
         select(func.count(AiUsage.id), func.coalesce(func.sum(AiUsage.input_tokens + AiUsage.output_tokens), 0),
                func.coalesce(func.sum(case((AiUsage.ok.is_(False), 1), else_=0)), 0))
-        .where(AiUsage.provider == PROVIDER, AiUsage.at >= since)).one()
+        .where(AiUsage.provider.in_(FREE_PROVIDERS), AiUsage.at >= since)).one()  # ONE cap over every AI call
     return {"requests": int(n), "tokens": int(tok), "failed": int(failed)}
 
 
@@ -140,9 +146,9 @@ def check(session, model: str, est_tokens: int, priority: str = "normal", now: d
     require_enabled=False only for the user's connection test before AI is switched on."""
     now = _now(now)
     cfg = settings_store.get("ai", {}) or {}
-    if require_enabled and cfg.get("provider") != PROVIDER:
+    if require_enabled and cfg.get("provider") not in FREE_PROVIDERS:
         raise Blocked("off")
-    key = secrets.get(groq.KEY_NAME)
+    key = secrets.get(KEY_NAMES[provider_of(model)])
     if not key:
         raise Blocked("no_key")
     with _lock:
@@ -176,7 +182,7 @@ def _log(session, task: str, model: str, ok: bool, tokens_in: int = 0, tokens_ou
          now: dt.datetime | None = None) -> None:
     from app.models import AiUsage
 
-    session.add(AiUsage(at=_now(now), task=task[:40], provider=PROVIDER, model=model[:60], input_tokens=tokens_in,
+    session.add(AiUsage(at=_now(now), task=task[:40], provider=provider_of(model), model=model[:60], input_tokens=tokens_in,
                         output_tokens=tokens_out, cost_usd=0.0, ok=ok, note=note[:500]))
     session.commit()
 
@@ -216,18 +222,19 @@ def record_failure(session, task: str, model: str, err: groq.GroqError, now: dt.
             if err.limits.get("requests_left_today") == 0:
                 wait = max(wait, err.limits.get("requests_reset_s") or 0)
             until = now + dt.timedelta(seconds=max(wait, 10))
-            st["models"][model] = {"paused_until": _iso(until), "reason": "HTTP 429 — limit Groq"}
+            st["models"][model] = {"paused_until": _iso(until),
+                                   "reason": f"HTTP 429 — bezplatný limit {'Gemini' if provider_of(model) == 'gemini' else 'Groq'}"}
         elif err.kind == "unavailable":
             st["fail_streak"] = int(st.get("fail_streak") or 0) + 1
             minutes = BREAKER_MINUTES[min(st["fail_streak"], len(BREAKER_MINUTES)) - 1]
             st["paused_until"] = _iso(now + dt.timedelta(minutes=minutes))
             st["pause_reason"] = f"{err} Další pokus nejdřív za {minutes} min."
         elif err.kind == "auth":
-            st["auth_block"] = _fingerprint(secrets.get(groq.KEY_NAME) or "")
+            st["auth_block"] = _fingerprint(secrets.get(KEY_NAMES[provider_of(model)]) or "")
         elif err.kind == "billing":
             st["billing_block"] = True
         elif err.kind == "model":
-            st["models"][model] = {"paused_until": _iso(now + dt.timedelta(hours=24)), "reason": "model u Groq nedostupný"}
+            st["models"][model] = {"paused_until": _iso(now + dt.timedelta(hours=24)), "reason": "model u poskytovatele nedostupný"}
         _save(st)
 
 
@@ -267,24 +274,37 @@ def single_flight(key: str):
 def status(session, now: dt.datetime | None = None) -> dict:
     now = _now(now)
     cfg = settings_store.get("ai", {}) or {}
-    key_set = bool(secrets.get(groq.KEY_NAME))
+    keys = {p: bool(secrets.get(k)) for p, k in KEY_NAMES.items()}
+    key_set = any(keys.values())
     c = caps()
     day = usage(session, now)
     st = copy.deepcopy(_load())
     state, until = "ready", None
+    first = next((m for p in _order(cfg) if keys[p] for m in (gemini.FREE_MODELS if p == "gemini" else groq.FREE_MODELS)),
+                 next(iter(groq.FREE_MODELS)))
     try:
-        check(session, next(iter(groq.FREE_MODELS)), 0, "high", now)
+        check(session, first, 0, "high", now)
     except Blocked as b:
         state, until = b.code, b.until
-    models = {m: {"paused_until": (st["models"].get(m) or {}).get("paused_until"),
+    models = {m: {"provider": provider_of(m), "paused_until": (st["models"].get(m) or {}).get("paused_until"),
                   "reason": (st["models"].get(m) or {}).get("reason"), "limits": st["limits"].get(m)}
-              for m in groq.FREE_MODELS}
+              for m in (*gemini.FREE_MODELS, *groq.FREE_MODELS)}
     if state == "model_paused" and any(not v["paused_until"] or _parse(v["paused_until"]) <= now for v in models.values()):
         state, until = "ready", None  # another free model is still available
-    return {"provider": cfg.get("provider", "none"), "key_set": key_set, "state": state,
-            "text": REASONS.get(state, "AI je připravená (Groq Free)." if state == "ready" else state),
+    order = [p for p in _order(cfg) if keys[p]]
+    ready_text = "AI je připravená (" + " → ".join("Gemini Free" if p == "gemini" else "Groq Free" for p in order) + ")."
+    return {"provider": cfg.get("provider", "none"), "key_set": key_set, "keys": keys, "order": order, "state": state,
+            "text": REASONS.get(state, ready_text if state == "ready" else state),
             "until": _iso(until), "auto_analyses": bool(cfg.get("auto_analyses")),
             "usage": {**day, "cap": c["requests"], "token_cap": c["tokens"], "per_minute_cap": c["per_minute"],
                       "reserve_from": int(c["requests"] * (1 - RESERVE_SHARE))},
             "models": models, "limits_changed": st.get("limits_changed"), "terms_checked": groq.TERMS_CHECKED,
-            "cost": "0 Kč — jen bezplatný tarif Groq Free, bez platební metody"}
+            "calls_today": day["requests"], "calls_cap": c["requests"],
+            "cost": "0 Kč — jen bezplatné tarify Gemini (bez billingu) a Groq Free, bez platební metody; "
+                    "vyčerpaný limit = NO TRADE „AI nedostupná“, nikdy placená náhrada"}
+
+
+def _order(cfg: dict) -> list[str]:
+    """The free providers, the chosen one first (ai.provider), the other as the backup."""
+    first = cfg.get("provider") if cfg.get("provider") in FREE_PROVIDERS else "gemini"
+    return [first] + [p for p in FREE_PROVIDERS if p != first]

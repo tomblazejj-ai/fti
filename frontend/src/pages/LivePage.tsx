@@ -1,11 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "../components/Icon";
-import { Card, Empty, Pills } from "../components/ui";
-import { STATIC, apiBase } from "../lib/api";
-import type { LiveCandles, LiveQuote, LiveSnapshot } from "../lib/types";
-
-const TFS = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"] as const;
-type Tf = (typeof TFS)[number];
+import { CandleChart } from "../components/CandleChart";
+import { Card, Empty } from "../components/ui";
+import { useLive } from "../hooks/useLive";
+import type { LiveQuote } from "../lib/types";
 
 function fmt(v: number | null | undefined, digits: number): string {
   if (v === null || v === undefined) return "—";
@@ -20,46 +18,6 @@ function signed(v: number | null | undefined, digits: number, suffix = ""): stri
 function clock(iso?: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
-
-/** The live stream (Server-Sent Events): a new snapshot whenever a price changes; reconnects by itself. */
-function useLiveStream(): { snap: LiveSnapshot | null; error: string | null; connected: boolean } {
-  const [snap, setSnap] = useState<LiveSnapshot | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [connected, setConnected] = useState(false);
-  useEffect(() => {
-    if (STATIC) {
-      setError("Živý terminál zatím běží jen v aplikaci na PC.");
-      return;
-    }
-    let es: EventSource | null = null;
-    let closed = false;
-    let retry: ReturnType<typeof setTimeout> | undefined;
-    const open = () => {
-      es = new EventSource(`${apiBase()}/api/live/stream`);
-      es.onopen = () => {
-        setConnected(true);
-        setError(null);
-      };
-      es.onmessage = (e) => setSnap(JSON.parse(e.data) as LiveSnapshot);
-      es.onerror = () => {
-        setConnected(false);
-        es?.close();
-        fetch(`${apiBase()}/api/live/snapshot`)
-          .then(async (r) => (r.ok ? null : ((await r.json()) as { detail?: string }).detail ?? `chyba ${r.status}`))
-          .then((msg) => setError(msg ?? "Spojení se přerušilo — připojuji znovu…"))
-          .catch(() => setError("FTI neodpovídá — připojuji znovu…"));
-        if (!closed) retry = setTimeout(open, 5000);
-      };
-    };
-    open();
-    return () => {
-      closed = true;
-      clearTimeout(retry);
-      es?.close();
-    };
-  }, []);
-  return { snap, error, connected };
 }
 
 function QuoteTile({ q, selected, onSelect }: { q: LiveQuote; selected: boolean; onSelect: () => void }) {
@@ -109,87 +67,9 @@ function QuoteTile({ q, selected, onSelect }: { q: LiveQuote; selected: boolean;
   );
 }
 
-const W = 960;
-const H = 340;
-const PAD = { top: 12, right: 78, bottom: 24, left: 8 };
-
-function LiveChart({ code, digits, version }: { code: string; digits: number; version: number }) {
-  const [tf, setTf] = useState<Tf>("M1");
-  const [data, setData] = useState<LiveCandles | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const last = useRef(0);
-  useEffect(() => {
-    setData(null);
-    last.current = 0;
-  }, [code, tf]);
-  useEffect(() => {
-    const now = Date.now();
-    if (now - last.current < 2000 && data) return; // at most every 2 s, the stream says when something changed
-    last.current = now;
-    fetch(`${apiBase()}/api/live/candles?code=${encodeURIComponent(code)}&tf=${tf}&limit=120`)
-      .then(async (r) => {
-        if (!r.ok) throw new Error(((await r.json()) as { detail?: string }).detail ?? `chyba ${r.status}`);
-        return (await r.json()) as LiveCandles;
-      })
-      .then((d) => {
-        setData(d);
-        setErr(null);
-      })
-      .catch((e: Error) => setErr(e.message));
-  }, [code, tf, version, data]);
-  const rows = data?.candles ?? [];
-  const scale = useMemo(() => {
-    if (!rows.length) return null;
-    const lo = Math.min(...rows.map((r) => r[3]));
-    const hi = Math.max(...rows.map((r) => r[2]));
-    const pad = (hi - lo) * 0.06 || 1;
-    return { lo: lo - pad, hi: hi + pad };
-  }, [rows]);
-  const plotW = W - PAD.left - PAD.right;
-  const plotH = H - PAD.top - PAD.bottom;
-  const step = rows.length ? plotW / rows.length : 1;
-  const x = (i: number) => PAD.left + step * (i + 0.5);
-  const y = (v: number) => (scale ? PAD.top + (1 - (v - scale.lo) / (scale.hi - scale.lo)) * plotH : 0);
-  const lastRow = rows[rows.length - 1];
-  return (
-    <div className="cchart">
-      <div className="cchart-bar">
-        <Pills label="Časový rámec" options={TFS.map((t) => ({ value: t, label: t }))} value={tf} onChange={setTf} />
-        {data && <small className="hint">{data.product} · svíčky ze {data.price_type === "mid" ? "středu bid/ask" : data.price_type}</small>}
-      </div>
-      <div className="cchart-box">
-        {err && !rows.length ? (
-          <p className="cchart-msg">{err}</p>
-        ) : !rows.length || !scale ? (
-          <p className="cchart-msg">Načítám svíčky…</p>
-        ) : (
-          <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Živý graf ${code} ${tf}`}>
-            {rows.map((r, i) => {
-              const up = r[4] >= r[1];
-              const bw = Math.max(1, step * 0.6);
-              return (
-                <g key={r[0]} className={up ? "cc-bull" : "cc-bear"}>
-                  <line x1={x(i)} x2={x(i)} y1={y(r[2])} y2={y(r[3])} />
-                  <rect x={x(i) - bw / 2} width={bw} y={y(Math.max(r[1], r[4]))} height={Math.max(1, Math.abs(y(r[1]) - y(r[4])))} rx="1" />
-                </g>
-              );
-            })}
-            {lastRow && (
-              <>
-                <line x1={PAD.left} x2={W - PAD.right} y1={y(lastRow[4])} y2={y(lastRow[4])} className="cc-last" />
-                <text x={W - PAD.right + 6} y={y(lastRow[4]) + 4} className="cc-tick">{fmt(lastRow[4], digits)}</text>
-              </>
-            )}
-          </svg>
-        )}
-      </div>
-    </div>
-  );
-}
-
 /** LIVE terminal (test version): XAUUSD, EURUSD, US500 and NAS100 streamed with their state, source and quote time. */
 export function LivePage() {
-  const { snap, error, connected } = useLiveStream();
+  const { snap, error, connected } = useLive();
   const [sel, setSel] = useState("XAUUSD");
   const quotes = snap?.instruments ?? [];
   const cur = quotes.find((q) => q.code === sel) ?? quotes[0];
@@ -216,7 +96,7 @@ export function LivePage() {
           </div>
           {cur && (
             <Card title={`${cur.label} — živý graf`} icon={<Icon name="line" size={16} />} i={1} id="live-graf">
-              <LiveChart code={cur.code} digits={cur.digits} version={snap?.version ?? 0} />
+              <CandleChart key={cur.code} code={cur.code} digits={cur.digits} initialTf="M1" fixedFeed="live" />
             </Card>
           )}
           {cur && (

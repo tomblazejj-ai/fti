@@ -16,6 +16,7 @@ ENV_FILE = BACKEND_DIR / ".env"
 KEYS = {
     "FRED_API_KEY": "FRED (oficiální API, klíč zdarma po registraci na fred.stlouisfed.org)",
     "OANDA_API_TOKEN": "OANDA v20 (token zdarma k demo účtu, jen tržní data)",
+    "GEMINI_API_KEY": "Google Gemini AI (jen Free bez billingu, klíč z aistudio.google.com → Get API key)",
     "GROQ_API_KEY": "Groq AI (jen bezplatný tarif Free, klíč z console.groq.com)",
     "FTI_SYNC_TOKEN": "Token synchronizace s vlastním cloudem FTI (Cloudflare Worker)",
     "TICKBASE_API_KEY": "TickBase (kontrola a záloha ceny zlata; klíč zdarma po registraci na thetickbase.com)",
@@ -38,7 +39,7 @@ _FORMATS = {"GROQ_API_KEY": (re.compile(r"^gsk_[A-Za-z0-9]{20,200}$"), "Klíč G
             "TICKBASE_API_KEY": (re.compile(r"^tb_(live|test)_[A-Za-z0-9_\-]{8,200}$"),
                                  "Klíč TickBase začíná „tb_live_“ (nebo „tb_test_“) a nemá mezery.")}
 # not even the last characters are shown for these
-_NO_HINT = {"GROQ_API_KEY", "FTI_SYNC_TOKEN", "TICKBASE_API_KEY", "CTRADER_CLIENT_SECRET", "CTRADER_ACCESS_TOKEN",
+_NO_HINT = {"GEMINI_API_KEY", "GROQ_API_KEY", "FTI_SYNC_TOKEN", "TICKBASE_API_KEY", "CTRADER_CLIENT_SECRET", "CTRADER_ACCESS_TOKEN",
             "CTRADER_REFRESH_TOKEN", "CAPITAL_API_KEY", "CAPITAL_IDENTIFIER", "CAPITAL_API_PASSWORD"}
 # values that are not plain keys: their own format instead of the general one
 _OWN_FORMAT = {"CAPITAL_IDENTIFIER": (re.compile(r"^[^\s@\"'#]+@[^\s@\"'#]+\.[^\s@\"'#]+$"),

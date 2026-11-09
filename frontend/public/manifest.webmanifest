@@ -1,17 +1,33 @@
 {
   "name": "FTI – Financial Trading Intelligence",
   "short_name": "FTI",
-  "description": "Kam míří trhy: fundament, zprávy a kalendář pro zlato, EUR/USD, GBP/USD, USD/JPY a ropu.",
+  "description": "Analytický systém pro manuální obchod XAU/USD: živé ceny, grafy, technika, fundament a AI výklad.",
   "lang": "cs",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait-primary",
-  "background_color": "#f4f6fb",
-  "theme_color": "#f4f6fb",
+  "background_color": "#0B0E13",
+  "theme_color": "#0B0E13",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "id": "./",
+  "categories": [
+    "finance"
   ]
 }

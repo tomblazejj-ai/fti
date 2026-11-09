@@ -85,6 +85,9 @@ def current() -> tuple[LiveInstrument, ...]:
 BY_CODE = {i.code: i for i in INSTRUMENTS}
 # the timeframes the engine builds from ticks (seconds) — on the broker's grid (app/connectors/dukascopy.bucket)
 TIMEFRAMES = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}
+# W1 and MN1 are grouped from the engine's own D1 candles when asked (bucket() of app/connectors/dukascopy) - never built
+# from ticks apart and never stored, so nothing new is written to the database
+DERIVED = {"W1": 7 * 86400, "MN1": 30 * 86400}
 LIVE_MAX_AGE = 15.0  # s: a quote older than this is not LIVE (Deriv sends ~1 a second, quiet indices up to 4 s apart)
 DELAYED_MAX_AGE = 15 * 60.0  # s: older than this → HISTORICAL (only the last stored price)
 JUMP_ATR = 5.0  # a quote moving more than 5 × ATR(M1) from the previous one is rejected (brief: validation)

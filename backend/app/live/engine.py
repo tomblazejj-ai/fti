@@ -24,7 +24,7 @@ import time
 from app.connectors.dukascopy import bucket
 from app.data import market_hours, universe
 from app.live.instruments import (BANNER, COMPAT_MIN_PAIRS, COMPAT_PAIR_GAP, DELAYED_MAX_AGE, INSTRUMENTS, JUMP_ATR,
-                                  JUMP_CONFIRM, LIVE_MAX_AGE, TIMEFRAMES, LiveInstrument)
+                                  JUMP_CONFIRM, LIVE_MAX_AGE, TIMEFRAMES, DERIVED, LiveInstrument)
 from app.live.providers import Tick
 
 UTC = dt.timezone.utc
@@ -337,6 +337,9 @@ class LiveEngine:
         inst = self.instruments[code]
         with self._lock:
             provider = provider or self.active.get(code) or inst.feeds[0].provider
+            if tf in DERIVED:  # W1 / MN1: the engine's D1 candles grouped on the broker's grid
+                daily = self.candles[(code, provider)].series("D1", 100000)
+                return provider, aggregate(daily, DERIVED[tf])[-limit:]
             return provider, self.candles[(code, provider)].series(tf, limit)
 
     # --- what the runner stores --------------------------------------------------------------------------------------

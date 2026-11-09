@@ -255,6 +255,7 @@ function Connect({ s, onChange }: { s: SourcesResponse; onChange: () => void }) 
 function AiCard() {
   const st = useAsync(() => api.aiStatus(), []);
   const [key, setKey] = useState("");
+  const [gkey, setGkey] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [test, setTest] = useState<AiTestResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -271,12 +272,14 @@ function AiCard() {
     }
   };
   const g = st.data?.groq;
-  const on = g?.provider === "groq";
+  const on = g?.provider === "groq" || g?.provider === "gemini";
   return (
-    <Card title="AI — Groq (zdarma)" icon={<Icon name="spark" size={16} />} i={1} id="ai">
+    <Card title="AI — Gemini Free, záloha Groq Free (zdarma)" icon={<Icon name="spark" size={16} />} i={1} id="ai">
       <p className="hint" style={{ marginTop: 0 } as CSSProperties}>
-        FTI používá jen bezplatný tarif Groq Free. Platební kartu ani jinou platební metodu nikde nezadávej. Když se bezplatný limit vyčerpá,
-        AI se pozastaví a FTI funguje dál bez ní. AI jen vykládá výpočty FTI — ceny, skóre ani BIAS nepočítá.
+        FTI používá jen bezplatné tarify: Google Gemini (Flash, bez zapnutého billingu) jako hlavní a Groq Free jako zálohu.
+        Platební kartu ani jinou platební metodu nikde nezadávej a v Google AI Studio nezapínej billing. Když se bezplatné limity
+        vyčerpají (HTTP 429), výsledek je NO TRADE „AI nedostupná“ — FTI nikdy nepřepne na placeného poskytovatele.
+        AI jen vykládá výpočty FTI — ceny, skóre ani BIAS nepočítá.
       </p>
       {st.error && !st.data ? <ErrorState message={st.error.message} onRetry={st.reload} /> : !g ? <Skeleton rows={3} /> : (
         <>
@@ -290,7 +293,38 @@ function AiCard() {
             </p>
           )}
 
-          <h3 className="sub">Klíč GROQ_API_KEY (uloží se jen na tomto PC)</h3>
+          {g.calls_cap !== undefined && (
+            <p className="ai-counter">
+              Volání AI dnes: <strong>{g.calls_today} / {g.calls_cap}</strong>
+              <small> (Gemini i Groq dohromady, denní strop FTI; nový den od 1:00 SEČ)</small>
+            </p>
+          )}
+          <h3 className="sub">Klíč GEMINI_API_KEY — hlavní (uloží se jen na tomto PC)</h3>
+          <p className="muted">
+            {g.keys?.gemini ? "Klíč Gemini je uložený." : "Klíč zatím není uložený — FTI zatím používá Groq."} Klíč získáš zdarma na
+            aistudio.google.com → Get API key (projekt bez billingu).
+          </p>
+          <div className="form-row">
+            <input type="password" autoComplete="off" placeholder="vlož klíč z aistudio.google.com (začíná AIza)" value={gkey}
+                   onChange={(e) => setGkey(e.target.value)} aria-label="Klíč Gemini" />
+            <button type="button" className="btn-primary" disabled={busy || !gkey.trim()}
+                    onClick={() => act(async () => { await api.setKey("GEMINI_API_KEY", gkey); setGkey(""); }, "Klíč Gemini uložen.")}>
+              Uložit klíč
+            </button>
+            {g.keys?.gemini && (
+              <>
+                <button type="button" className="btn" disabled={busy}
+                        onClick={() => act(async () => setTest(await api.aiTestGemini()), "Test Gemini proběhl.")}>
+                  Otestovat Gemini
+                </button>
+                <button type="button" className="btn" disabled={busy} onClick={() => act(() => api.setKey("GEMINI_API_KEY", ""), "Klíč Gemini smazán.")}>
+                  Smazat klíč
+                </button>
+              </>
+            )}
+          </div>
+
+          <h3 className="sub">Klíč GROQ_API_KEY — záloha (uloží se jen na tomto PC)</h3>
           <p className="muted">{g.key_set ? "Klíč je uložený. Z bezpečnostních důvodů se nikde nezobrazuje." : "Klíč zatím není uložený."}</p>
           <div className="form-row">
             <input type="password" autoComplete="off" placeholder="vlož klíč z console.groq.com (začíná gsk_)" value={key}
@@ -307,12 +341,12 @@ function AiCard() {
           </div>
 
           <div className="form-row">
-            <button type="button" className="btn" disabled={busy || !g.key_set}
+            <button type="button" className="btn" disabled={busy || !g.keys?.groq}
                     onClick={() => act(async () => setTest(await api.aiTest()), "Test proběhl.")}>
-              Otestovat připojení
+              Otestovat Groq
             </button>
             <button type="button" className={on ? "btn" : "btn-primary"} disabled={busy || (!on && !g.key_set)}
-                    onClick={() => act(() => api.updateSettings({ ai: { provider: on ? "none" : "groq" } }), on ? "AI vypnuta." : "AI zapnuta.")}>
+                    onClick={() => act(() => api.updateSettings({ ai: { provider: on ? "none" : "gemini" } }), on ? "AI vypnuta." : "AI zapnuta (Gemini, záloha Groq).")}>
               {on ? "Vypnout AI" : "Zapnout AI"}
             </button>
             {on && (

@@ -243,7 +243,9 @@ def run(session, code: str = "XAUUSD", reason: str = "na požádání", priority
                                 max_tokens, _est(SYSTEM + msg) + max_tokens, TRADE_SCHEMA, TASK, priority, sleep=sleep)
         except router.RoleUnavailable as exc:
             done = ", ".join(s["role"] for s in stages) or "žádná"
-            return {"status": "unavailable", "text": f"Komplexní analýza se teď nedá dokončit ({exc.role}): {exc} Hotové role: {done}.",
+            # the user's rule (9. 11. 2026): free limits gone (HTTP 429 everywhere) or no free model → NO TRADE, never a paid one
+            return {"status": "unavailable", "no_trade": True,
+                    "text": f"NO TRADE — AI nedostupná ({exc.role}): {exc} Placený poskytovatel se nepoužije. Hotové role: {done}.",
                     "until": exc.until.isoformat() if exc.until else None, "analysis": tasks.to_dict(last) if last else None}
         verdict = validate.validate(r.content, TRADE_SCHEMA, p.facts)
         final = r.content if isinstance(r.content, dict) else {}

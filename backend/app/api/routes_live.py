@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.live import runner
-from app.live.instruments import TIMEFRAMES
+from app.live.instruments import DERIVED, TIMEFRAMES
 
 router = APIRouter(prefix="/api/live", tags=["live"])
 OFF = "Živá data jsou vypnutá (Nastavení → LIVE). Ceny jinde v aplikaci jsou z periodických zdrojů se svým štítkem kvality."
@@ -64,8 +64,8 @@ def candles(code: str = "XAUUSD", tf: str = "M1", limit: int = 300):
     code, tf = code.upper(), tf.upper()
     if code not in r.engine.instruments:
         raise HTTPException(status_code=404, detail=f"{code} není v živém terminálu (zatím XAUUSD, EURUSD, US500, NAS100).")
-    if tf not in TIMEFRAMES:
-        raise HTTPException(status_code=400, detail=f"Timeframe jen {', '.join(TIMEFRAMES)}.")
+    if tf not in TIMEFRAMES and tf not in DERIVED:
+        raise HTTPException(status_code=400, detail=f"Timeframe jen {', '.join([*TIMEFRAMES, *DERIVED])}.")
     provider, rows = r.engine.series(code, tf, max(10, min(limit, 2000)))
     feed = next((f for f in r.engine.instruments[code].feeds if f.provider == provider), None)
     return {"code": code, "tf": tf, "provider": provider, "product": feed.product if feed else None,

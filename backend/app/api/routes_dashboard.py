@@ -417,9 +417,10 @@ def get_candles(code: str, tf: str = "H1"):
 
 
 def _day_labels(rows: list[list], tf: str) -> list[str] | None:
-    """The trading day of each daily / weekly candle (YYYY-MM-DD). A broker candle starts at 17:00 New York the evening
-    before, so the local time of its start would show the previous date; a week is named by its Monday."""
-    if tf not in ("D1", "W1"):
+    """The trading day of each daily / weekly / monthly candle (YYYY-MM-DD). A broker candle starts at 17:00 New York the
+    evening before, so the local time of its start would show the previous date; a week is named by its Monday, a month
+    by its 1st."""
+    if tf not in ("D1", "W1", "MN1"):
         return None
     from app.data.market_hours import trading_date
 

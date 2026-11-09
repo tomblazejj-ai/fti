@@ -1,0 +1,93 @@
+/* FTI — the ONLY place with colour values. Components use var(--…) only (check: no "#" or "rgb(" outside this file).
+   Default theme: dark. The switch sets <html data-theme="dark|light"> and remembers it (src/theme.ts). */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0B0E13;
+  --surface: #12161D;
+  --surface-2: #181D26;
+  --border: #232A35;
+  --text: #E6EAF0;
+  --text-muted: #8A94A6;
+  --accent: #3B82F6;
+  --up: #22C55E;
+  --down: #EF4444;
+  --warn: #F59E0B;
+  --zone-gold: #D4A72C;
+  --stale: #6B7280;
+  --on-accent: #FFFFFF;
+  --shadow: none;
+  --shadow-up: none;
+  --mix: 16%;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #F6F7F9;
+  --surface: #FFFFFF;
+  --surface-2: #F1F3F6;
+  --border: #E3E7ED;
+  --text: #0F172A;
+  --text-muted: #5B6474;
+  --accent: #2563EB;
+  --up: #15803D;
+  --down: #DC2626;
+  --warn: #B45309;
+  --zone-gold: #B8860B;
+  --stale: #9CA3AF;
+  --on-accent: #FFFFFF;
+  --shadow: 0 1px 2px color-mix(in srgb, var(--text) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--text) 6%, transparent);
+  --shadow-up: 0 2px 6px color-mix(in srgb, var(--text) 7%, transparent), 0 10px 24px color-mix(in srgb, var(--accent) 12%, transparent);
+  --mix: 11%;
+}
+
+/* derived from the base tokens (both themes) — older names kept so existing components keep working */
+:root {
+  --card: var(--surface);
+  --line: var(--border);
+  --line-soft: color-mix(in srgb, var(--border) 55%, var(--surface));
+  --text-2: color-mix(in srgb, var(--text) 82%, var(--text-muted));
+  --muted: var(--text-muted);
+  --faint: color-mix(in srgb, var(--text-muted) 72%, var(--surface));
+  --accent-2: var(--accent);
+  --accent-bg: color-mix(in srgb, var(--accent) var(--mix), var(--surface));
+  --accent-line: color-mix(in srgb, var(--accent) 40%, var(--border));
+  --pos: var(--up);
+  --pos-strong: var(--up);
+  --pos-bg: color-mix(in srgb, var(--up) var(--mix), var(--surface));
+  --neg: var(--down);
+  --neg-strong: var(--down);
+  --neg-bg: color-mix(in srgb, var(--down) var(--mix), var(--surface));
+  --zero: var(--text-muted);
+  --zero-bg: var(--surface-2);
+  --warn-bg: color-mix(in srgb, var(--warn) var(--mix), var(--surface));
+  --warn-line: color-mix(in srgb, var(--warn) 45%, var(--border));
+  --stale-bg: color-mix(in srgb, var(--stale) var(--mix), var(--surface));
+  --gold-bg: color-mix(in srgb, var(--zone-gold) var(--mix), var(--surface));
+  --overlay: color-mix(in srgb, var(--bg) 82%, transparent);
+  --flash-up: color-mix(in srgb, var(--up) 28%, transparent);
+  --flash-down: color-mix(in srgb, var(--down) 28%, transparent);
+  /* charts (Lightweight Charts reads these on every theme switch) */
+  --chart-bg: var(--surface);
+  --chart-text: var(--text-muted);
+  --chart-grid: color-mix(in srgb, var(--border) 70%, var(--surface));
+  --chart-up: var(--up);
+  --chart-down: var(--down);
+  --chart-ema20: var(--warn);
+  --chart-ema50: var(--accent);
+  --chart-line: var(--accent);
+  --chart-area-top: color-mix(in srgb, var(--accent) 22%, transparent);
+  --chart-area-bottom: color-mix(in srgb, var(--accent) 1%, transparent);
+  --chart-cross: color-mix(in srgb, var(--text-muted) 75%, transparent);
+  --chart-label: color-mix(in srgb, var(--accent) 80%, var(--surface));
+  --chart-session-ldn: color-mix(in srgb, var(--accent) 9%, transparent);
+  --chart-session-ny: color-mix(in srgb, var(--zone-gold) 11%, transparent);
+  --chart-session-both: color-mix(in srgb, var(--up) 11%, transparent);
+  --chart-bid: var(--down);
+  --chart-ask: var(--accent);
+  --radius: 12px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-num: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}

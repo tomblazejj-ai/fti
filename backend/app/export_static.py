@@ -19,8 +19,8 @@ import sys
 from pathlib import Path
 
 # each instrument's own data only (XAUUSD without a broker feed has just the NBP daily reference)
-CANDLES = {"XAUUSD": ["H4", "D1", "W1"], "PAXGUSD": ["H4", "D1", "W1"], "EURUSD": ["H4", "D1", "W1"],
-           "GBPUSD": ["H4", "D1", "W1"], "USDJPY": ["H4", "D1", "W1"], "USOIL": ["D1", "W1"]}
+CANDLES = {"XAUUSD": ["H4", "D1", "W1", "MN1"], "PAXGUSD": ["H4", "D1", "W1", "MN1"], "EURUSD": ["H4", "D1", "W1", "MN1"],
+           "GBPUSD": ["H4", "D1", "W1", "MN1"], "USDJPY": ["H4", "D1", "W1", "MN1"], "USOIL": ["D1", "W1", "MN1"]}
 PRIVATE = ("mt5", "keys", "oanda")  # never published: settings and key status of this PC
 
 

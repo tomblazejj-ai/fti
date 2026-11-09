@@ -256,6 +256,34 @@ def ai_test(session: Session = Depends(get_session)):
             "limits": reply.limits, "answer": str(reply.content)[:40]}
 
 
+@router.post("/ai/test-gemini")
+def ai_test_gemini(session: Session = Depends(get_session)):
+    """The user's connection test of Gemini Free: the key on Google's model list (no tokens), then one tiny answer
+    (counts as 1 call of FTI's daily cap). Without billing nothing can be charged."""
+    from app.ai import gemini, guard
+
+    try:
+        available = gemini.list_models()
+    except gemini.GroqError as err:
+        return {"ok": False, "text": str(err)}
+    free_ok = [m for m in gemini.FREE_MODELS if m in available]
+    if not free_ok:
+        return {"ok": False, "text": "Klíč funguje, ale žádný model Flash z bezplatného seznamu FTI není k dispozici.",
+                "models": available[:20]}
+    model = free_ok[-1]  # the lighter one for the test
+    try:
+        guard.check(session, model, 200, "high", require_enabled=False)
+        reply = gemini.chat([{"role": "user", "content": "Odpověz jedním slovem: OK"}], model, 64)
+    except guard.Blocked as b:
+        return {"ok": False, "text": str(b), "until": b.until.isoformat() if b.until else None}
+    except gemini.GroqError as err:
+        guard.record_failure(session, "test", model, err)
+        return {"ok": False, "text": str(err), "models": free_ok}
+    guard.record_success(session, "test", model, reply)
+    return {"ok": True, "text": f"Gemini odpovídá ({reply.model}), klíč funguje, bez billingu.", "models": free_ok,
+            "seconds": round(reply.seconds, 2), "answer": str(reply.content)[:40]}
+
+
 class AnalyzeIn(BaseModel):
     task: str
     code: str | None = None

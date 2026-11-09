@@ -64,7 +64,8 @@ export interface TickersResponse {
   market?: MarketState;
 }
 
-export type Tf = "M15" | "H1" | "H4" | "D1" | "W1";
+/** every timeframe of the charts (master spec 3.1) — which source has which one says lib/chartFeed.ts */
+export type Tf = "M1" | "M5" | "M15" | "M30" | "H1" | "H4" | "D1" | "W1" | "MN1";
 
 /** [time (s), open, high, low, close, EMA20, EMA50] */
 export type CandleRow = [number, number, number, number, number, number, number];
@@ -399,6 +400,12 @@ export interface AiRunResult {
 }
 
 export interface AiGroqStatus {
+  /** which free providers have a key, and the order FTI asks them in (the first is the main one) */
+  keys?: { gemini: boolean; groq: boolean };
+  order?: string[];
+  /** every AI call today (Gemini and Groq together) against FTI's daily cap */
+  calls_today?: number;
+  calls_cap?: number;
   provider: string;
   key_set: boolean;
   state: string;
@@ -579,4 +586,125 @@ export interface LiveCandles {
   price_type: string | null;
   candles: [number, number, number, number, number][];
   quote: LiveQuote;
+}
+
+// Gold's analysis from FTI's engine — /api/instruments/XAUUSD/analysis (only the parts the screens show)
+export interface AnalysisLevel {
+  label: string;
+  pct: number;
+  price: number;
+  touches?: number;
+}
+
+export interface TechItem {
+  name: string;
+  value: string;
+  signal: number;
+  text: string;
+  weight: number;
+}
+
+export interface GoldTechnical {
+  as_of: string;
+  last_price: number | null;
+  trend: string;
+  trend_label: string;
+  trend_score: number | null;
+  tech_score: number | null;
+  rsi14: number | null;
+  rsi_state?: string;
+  sma50_pct?: number | null;
+  sma200_pct?: number | null;
+  volatility20?: number | null;
+  trend_age_text?: string;
+  changes?: Record<string, number | null>;
+  groups?: { key: string; title: string; items: TechItem[] }[];
+  supports?: AnalysisLevel[];
+  resistances?: AnalysisLevel[];
+  fibonacci?: { ratio: number; pct: number; price: number }[];
+  fibonacci_text?: string;
+  history?: { date: string; close: number; sma50: number | null; sma200: number | null }[];
+}
+
+export interface VerdictFactor {
+  key: string;
+  label: string;
+  score: number;
+  detail: string;
+  sentence: string;
+  direction: string;
+  weight: number;
+}
+
+export interface GoldVerdict {
+  action: "long" | "short" | "wait";
+  direction_text: string;
+  action_text: string;
+  headline: string;
+  summary: string;
+  confidence: string;
+  combined: number;
+  factors: VerdictFactor[];
+}
+
+export interface MtfRow {
+  tf: string;
+  tf_label: string;
+  direction: string;
+  word: string;
+  strength?: string;
+  adx?: number | null;
+  change_pct?: number | null;
+  text: string;
+  as_of: string;
+}
+
+export interface SourceStatusRow {
+  key: string;
+  label: string;
+  provider: string;
+  rhythm: string;
+  as_of: string | null;
+  status: string;
+  note: string | null;
+}
+
+export interface CotGroup {
+  key: string;
+  label: string;
+  who: string;
+  net: number;
+  long?: number;
+  short?: number;
+  change_1w?: number | null;
+  change_4w?: number | null;
+  index_3y?: number | null;
+}
+
+export interface GoldAnalysis {
+  computed_at: string;
+  technical?: GoldTechnical | null;
+  verdict?: GoldVerdict | null;
+  scorecard?: { items: { key: string; label: string; score: number | null; group: string }[]; final: number; final_label: string; note: string } | null;
+  summary?: { date: string; text: string; bullets: string[]; outlook: string[]; note: string } | null;
+  decision?: { headline: string; bull: { kind: string; title: string; detail: string; active: boolean }[]; bear: { kind: string; title: string; detail: string; active: boolean }[] } | null;
+  seasonality?: { current_text: string; next_text: string; note: string; years_from: number; years_to: number } | null;
+  seasonality_long?: { gold?: { label: string; months: { month: number; name: string; avg5: number | null; avg10: number | null; avg15: number | null; win10: number | null; n10: number }[] } } | null;
+  cot?: {
+    source_label: string;
+    as_of: string;
+    texts: string[];
+    groups: CotGroup[];
+    cot_index_3y?: number | null;
+    cot_index_1y?: number | null;
+    spec_net?: number | null;
+    change_1w?: number | null;
+    change_4w?: number | null;
+    schedule?: { published: string | null; next_release: string | null };
+  } | null;
+  dxy?: { price: number | null; text: string; source: string; verified?: string; ecb_date?: string; effect_on_gold?: number } | null;
+  mtf?: { timeframes: MtfRow[]; overall?: { word: string; direction: string; score: number } } | null;
+  headline_risk?: { level: number; word: string; items: { title: string; source: string; url: string; published_at: string; topic?: string }[] } | null;
+  sources_status?: SourceStatusRow[];
+  market?: MarketState;
 }

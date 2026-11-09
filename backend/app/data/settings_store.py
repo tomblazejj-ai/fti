@@ -42,7 +42,8 @@ DEFAULTS: dict = {
     },
     "ai": {
         # FTI costs nothing (user's rule): no paid AI. "none" = reports built by the deterministic engine;
-        # "groq" = Groq FREE plan (key GROQ_API_KEY); "ollama" = a free open-source model on this PC, if installed.
+        # "groq" = Groq FREE plan (key GROQ_API_KEY); "gemini" = Google Gemini FREE (no billing, key GEMINI_API_KEY) first
+        # and Groq Free as the backup (9. 11. 2026); "ollama" = a free open-source model on this PC, if installed.
         "provider": "none",
         "local_model": "",
         "auto_analyses": False,

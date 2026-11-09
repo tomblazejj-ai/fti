@@ -21,7 +21,8 @@ import datetime as dt
 import time
 from dataclasses import dataclass, field
 
-from app.ai import groq, guard
+from app.ai import gemini, groq, guard
+from app.data import settings_store
 from app.data import secrets
 
 UTC = dt.timezone.utc
@@ -56,8 +57,12 @@ PROVIDERS: dict[str, Provider] = {p.id: p for p in (
     Provider("workers_ai", "Cloudflare Workers AI", free=True, approved=False, implemented=False, key_name="CLOUDFLARE_AI_TOKEN",
              terms="10 000 neuronů/den zdarma, po vyčerpání chyba (bez účtování) — ověřeno v dokumentaci 7. 11. 2026.",
              why_not="Čeká na schválení; klient FTI zatím není."),
-    Provider("gemini", "Google Gemini API (free tier)", free=True, approved=False, implemented=False, key_name="GEMINI_API_KEY",
-             why_not="Čeká na ověření limitů a podmínek použití dat ve free tieru a na schválení."),
+    Provider("gemini", "Google Gemini API (Free, bez billingu)", free=True, approved=True, implemented=True,
+             key_name=gemini.KEY_NAME,
+             models=(Model("gemini-flash-latest", "strong"), Model("gemini-flash-lite-latest", "fast")),
+             terms="Bezplatný tarif AI Studio bez billingu (schváleno uživatelem 9. 11. 2026): bez billingu Google nic "
+                   "neúčtuje, vyčerpaný limit = HTTP 429 → pauza modelu, pak Groq Free. Podmínky 23. 3. 2026: v EHP jen "
+                   "placené služby, když se API klient zpřístupňuje uživatelům — uživatel o tom ví."),
     Provider("openrouter", "OpenRouter (modely :free)", free=True, approved=False, implemented=False, key_name="OPENROUTER_API_KEY",
              why_not="Čeká na ověření denních limitů bez kreditu a na schválení."),
     Provider("mistral", "Mistral (Experiment plán)", free=True, approved=False, implemented=False, key_name="MISTRAL_API_KEY",
@@ -122,10 +127,16 @@ def candidates(role: str) -> list[Candidate]:
     tiers = ROLES.get(role, ("strong", "fast"))
     scores = ROLE_SCORES.get(role, {})
     out = []
-    for tier in tiers:
-        tier_models = [(p, m) for p in PROVIDERS.values() if usable(p)[0] for m in p.models if m.tier == tier]
-        tier_models.sort(key=lambda pm: -scores.get(pm[1].id, 0.0))  # stable: registry order when unmeasured
-        out += [Candidate(p.id, m.id, tier) for p, m in tier_models if guard.available(m.id) or p.id != "groq"]
+    order = guard._order(settings_store.get("ai", {}) or {})
+    providers = sorted(PROVIDERS.values(), key=lambda p: order.index(p.id) if p.id in order else len(order))
+    # the chosen provider with all its models first (each Gemini model has its own free quota), the backup after it
+    for p in providers:
+        if not usable(p)[0]:
+            continue
+        for tier in tiers:
+            tier_models = [m for m in p.models if m.tier == tier]
+            tier_models.sort(key=lambda m: -scores.get(m.id, 0.0))  # stable: registry order when unmeasured
+            out += [Candidate(p.id, m.id, tier) for m in tier_models if guard.available(m.id) or p.id != "groq"]
     return out
 
 
@@ -143,6 +154,8 @@ def catalog() -> list[dict]:
 def _call(c: Candidate, messages: list[dict], max_tokens: int, schema: dict | None, schema_name: str):
     if c.provider == "groq":
         return groq.chat(messages, c.model, max_tokens, schema=schema, schema_name=schema_name)
+    if c.provider == "gemini":
+        return gemini.chat(messages, c.model, max_tokens, schema=schema, schema_name=schema_name)
     raise RuntimeError(f"Poskytovatel {c.provider} nemá klienta")  # unreachable: usable() filters it out
 
 
@@ -177,7 +190,7 @@ def run_role(session, role: str, messages: list[dict], max_tokens: int, est_toke
             guard.record_success(session, f"{task}:{role}", c.model, reply, t)
             attempts.append({"provider": c.provider, "model": reply.model, "result": "ok"})
             return RoleReply(role, c.provider, reply.model, reply.content, reply.tokens_in, reply.tokens_out, reply.seconds, attempts)
-        if last_block is not None and last_block.code not in ("model_paused", "minute"):
-            break  # daily cap, AI off, no key …: no other Groq model would be allowed either
+        if last_block is not None and last_block.code in ("daily_cap", "reserve", "token_cap", "off", "billing"):
+            break  # the shared daily cap or AI off: no other model may be asked either (a missing key is per provider)
     reason = str(last_block) if last_block else "Žádný schválený bezplatný AI model není k dispozici."
     raise RoleUnavailable(role, reason, last_block.until if last_block else None, attempts)

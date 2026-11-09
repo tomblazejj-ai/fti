@@ -101,6 +101,7 @@ const STRATEGY = /metodik|obchodní plán|nevstupuj|checklist/i;
 describe("Home", () => {
   it("puts the fundament of every market first, then what moves and what can move the markets", async () => {
     mock();
+    window.location.hash = "#/trhy";
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Kam míří trhy" })).toBeInTheDocument();
     expect(screen.getAllByText("FTI").length).toBeGreaterThan(0);
@@ -136,12 +137,16 @@ describe("Home", () => {
     expect(screen.getByRole("button", { name: "Zkusit znovu" })).toBeInTheDocument();
   });
 
-  it("has a short menu with the data page", async () => {
+  it("has a sidebar menu in groups, the data sources page included", async () => {
     mock();
     render(<App />);
-    await screen.findByRole("heading", { name: "Kam míří trhy" });
     const menu = screen.getByRole("navigation", { name: "Hlavní menu" });
-    expect(within(menu).getAllByRole("link").map((a) => a.textContent?.trim())).toEqual(["Přehled", "Živě", "Kalendář", "Zprávy", "Data"]);
+    expect(within(menu).getAllByRole("heading").map((h) => h.textContent)).toEqual(["Přehled", "Analýza", "Rozhodnutí", "Vyhodnocení", "Systém"]);
+    expect(within(menu).getAllByRole("link").map((a) => a.textContent?.trim())).toEqual([
+      "Dashboard", "Live Markets", "Trhy", "Grafy", "Zlato", "Technika", "Intermarket", "Makro & COT", "Zprávy", "Kalendář",
+      "AI Advisor", "Risk", "Backtest", "Historie signálů", "Deník obchodů", "Zdroje dat", "Nastavení",
+    ]);
+    expect(within(menu).getByRole("link", { name: "Zdroje dat" })).toHaveAttribute("href", "#/data");
   });
 });
 
@@ -161,21 +166,25 @@ describe("Market detail", () => {
     const influence = screen.getByRole("region", { name: "Co může trh ovlivnit" });
     expect(within(influence).getByText("Rozhodnutí Fedu o sazbách")).toBeInTheDocument();
 
-    const tech = screen.getByRole("region", { name: "Technický výhled z veřejných zdrojů" });
+    expect(screen.getByText("Rozdíl sazeb EUR–USD se zužuje.")).toBeInTheDocument();  // score overview under the chart
+    expect(screen.getByRole("navigation", { name: "Části detailu" })).toHaveTextContent(
+      "PřehledTechnikaZóny & likviditaIntermarketMakro & COTSezónnostZprávyKalendář");
+
+    window.location.hash = "#/trh/EURUSD/technika";
+    const tech = await screen.findByRole("region", { name: "Technický výhled z veřejných zdrojů" });
     const link = within(tech).getByRole("link", { name: /býci míří na 1,1200/ });
     expect(link).toHaveAttribute("href", "https://x/t1");
     expect(link).toHaveAttribute("target", "_blank");
     expect(within(tech).getByText(/FXEmpire prognózy/)).toBeInTheDocument();
 
-    expect(screen.getByRole("region", { name: "Drobní obchodníci" })).toHaveTextContent("80 % short");
-    fireEvent.click(screen.getByText("Rozpis skóre"));
-    expect(screen.getByText("Rozdíl sazeb EUR–USD se zužuje.")).toBeInTheDocument();
+    window.location.hash = "#/trh/EURUSD/makro";
+    expect(await screen.findByRole("region", { name: "Drobní obchodníci" })).toHaveTextContent("80 % short");
     expect(document.body.textContent).not.toMatch(STRATEGY);
   });
 
   it("says so when public portals have no new technical outlook", async () => {
     mock();
-    window.location.hash = "#/trh/USDJPY";
+    window.location.hash = "#/trh/USDJPY/technika";
     render(<App />);
     const tech = await screen.findByRole("region", { name: "Technický výhled z veřejných zdrojů" });
     expect(tech).toHaveTextContent("nový technický rozbor nevydaly");
@@ -207,7 +216,7 @@ describe("Calendar and news", () => {
       if (path.endsWith("/candles")) return Response.json({ tf: "D1", source: "Dukascopy", candles: [], fetched_at: "" });
       return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
     });
-    window.location.hash = "#/trh/XAUUSD";
+    window.location.hash = "#/trh/XAUUSD/intermarket";
     render(<App />);
     expect(await screen.findByText("Mezitrh – vztahy se zlatem")).toBeInTheDocument();
     const row = (await screen.findAllByText("Dolarový index DXY*")).map((e) => e.closest("tr")).find(Boolean)!;
@@ -245,7 +254,7 @@ describe("Calendar and news", () => {
       if (path.endsWith("/candles")) return Response.json({ tf: "D1", source: "Dukascopy", candles: [], fetched_at: "" });
       return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
     });
-    window.location.hash = "#/trh/XAUUSD";
+    window.location.hash = "#/trh/XAUUSD/technika";
     const first = render(<App />);
     expect(await screen.findByText(/Režim trhu se ještě počítá/)).toBeInTheDocument();  // said, never invented
     first.unmount();
@@ -319,14 +328,15 @@ describe("Calendar and news", () => {
     vi.stubGlobal("EventSource", FakeES);
     window.location.hash = "#/zive";
     render(<App />);
-    const gold = (await screen.findByText("4 096,29")).closest("button")!;
+    const main = await screen.findByRole("main");
+    const gold = (await within(main).findByText("4 096,29")).closest("button")!;
     expect(gold).toHaveTextContent("LIVE");
     expect(gold).toHaveTextContent("Bid 4 096,00");
     expect(gold).toHaveTextContent("Ask 4 096,58");
     expect(gold).toHaveTextContent("+40,87 (+1,01 %)");
     expect(gold).toHaveTextContent("proti závěru 2026-11-06");
     expect(gold).toHaveTextContent("Deriv Gold/USD");
-    const spx = screen.getByText("US500").closest("button")!;
+    const spx = within(main).getByText("US500").closest("button")!;
     expect(spx).toHaveTextContent("HISTORICAL");
     expect(spx).toHaveTextContent("ne index sám");
     expect(spx).toHaveTextContent("jen 6–21 h UTC");
@@ -416,7 +426,7 @@ describe("AI (Groq Free)", () => {
 
   it("shows a verified AI interpretation with the facts it used", async () => {
     mockAi(groq(), [analysis(true)]);
-    window.location.hash = "#/trh/EURUSD";
+    window.location.hash = "#/ai/EURUSD";
     render(<App />);
     const ai = await screen.findByRole("region", { name: "Výklad AI" });
     expect(await within(ai).findByText("ověřeno proti datům FTI")).toBeInTheDocument();
@@ -427,7 +437,7 @@ describe("AI (Groq Free)", () => {
 
   it("never presents an answer with invented numbers as verified", async () => {
     mockAi(groq(), [analysis(false)]);
-    window.location.hash = "#/trh/EURUSD";
+    window.location.hash = "#/ai/EURUSD";
     render(<App />);
     const ai = await screen.findByRole("region", { name: "Výklad AI" });
     expect(await within(ai).findByText("neověřeno")).toBeInTheDocument();
@@ -439,11 +449,25 @@ describe("AI (Groq Free)", () => {
     mockAi(groq({ provider: "none", key_set: false, state: "off", text: "AI je vypnutá v nastavení — FTI ukazuje rozbor z pravidel." }), []);
     window.location.hash = "#/data";
     render(<App />);
-    const ai = await screen.findByRole("region", { name: "AI — Groq (zdarma)" });
+    const ai = await screen.findByRole("region", { name: "AI — Gemini Free, záloha Groq Free (zdarma)" });
     expect(await within(ai).findByText("Klíč zatím není uložený.")).toBeInTheDocument();
+    expect(within(ai).getByText(/NO TRADE „AI nedostupná“/)).toBeInTheDocument();  // limits gone: never a paid provider
+    expect(within(ai).getByText(/nezapínej billing/)).toBeInTheDocument();
     expect(within(ai).getByRole("button", { name: "Zapnout AI" })).toBeDisabled();
     expect(within(ai).getByText(/nepřipraveno: Engine FTI zatím zóny nepočítá/)).toBeInTheDocument();
     expect(within(ai).getByText(/0 Kč/)).toBeInTheDocument();
     expect(ai.textContent).not.toMatch(/gsk_[A-Za-z0-9]{8,}/);
+    expect(ai.textContent).not.toMatch(/AIza[A-Za-z0-9_-]{8,}/);
+  });
+
+  it("shows today's AI calls against the daily cap, Gemini first", async () => {
+    mockAi(groq({ provider: "gemini", keys: { gemini: true, groq: true }, order: ["gemini", "groq"], calls_today: 12, calls_cap: 80,
+                  text: "AI je připravená (Gemini Free → Groq Free)." }), []);
+    window.location.hash = "#/data";
+    render(<App />);
+    const ai = await screen.findByRole("region", { name: "AI — Gemini Free, záloha Groq Free (zdarma)" });
+    expect(await within(ai).findByText("12 / 80")).toBeInTheDocument();
+    expect(within(ai).getByText("AI je připravená (Gemini Free → Groq Free).")).toBeInTheDocument();
+    expect(within(ai).getByRole("button", { name: "Otestovat Gemini" })).toBeEnabled();
   });
 });

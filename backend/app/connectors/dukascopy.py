@@ -204,15 +204,23 @@ def _hour_ticks(symbol: str, hour: dt.datetime, now: dt.datetime, budget: list[i
             (struct.unpack(">3i2f", data[i:i + 20]) for i in range(0, len(data) - 19, 20))]
 
 
+WEEK = 7 * 86400
+MONTH = 30 * 86400  # the code of MN1: a calendar month on the broker's grid, not 30 days
+
+
 def bucket(t: int, sec: int) -> int:
     """Start of the `sec`-second bar that contains t, on the broker's grid (MT5 server time = New York + 7 h): a daily
     bar is the trading day 17:00 → 17:00 New York (five a week, no Sunday stub) and an H4 bar lies inside it
     (17, 21, 01, 05, 09, 13 h New York), so every H4 nests in its D1 in summer and winter time alike. Bars of an hour
     or less use the plain UTC grid — New York's offset is whole hours, so they nest too."""
-    from app.data.market_hours import trading_day_start
+    from app.data.market_hours import trading_day_start, trading_month_start, trading_week_start
 
     if sec == 86400:
         return trading_day_start(t)
+    if sec == WEEK:  # Saturday 17:00 New York (the broker's weekly candle)
+        return trading_week_start(t)
+    if sec == MONTH:  # the 1st 00:00 server time = 17:00 New York the evening before
+        return trading_month_start(t)
     if sec > 3600 and 86400 % sec == 0:
         s = trading_day_start(t)
         return s + (t - s) // sec * sec
@@ -242,15 +250,33 @@ def weekly(daily: list[tuple]) -> list[tuple]:
     return [tuple(b) for _, b in sorted(out.items())]
 
 
-def keep_whole(bars: list[tuple], span: int, covered: list[tuple[int, int]]) -> list[tuple]:
+def monthly(daily: list[tuple]) -> list[tuple]:
+    """Trading-day bars -> trading-month bars (MN1) on the broker's grid (bucket(t, MONTH))."""
+    out: dict[int, list] = {}
+    for t, o, h, lo, c, *_ in daily:
+        k = bucket(t, MONTH)
+        b = out.get(k)
+        out[k] = [k, o, h, lo, c, 0.0] if b is None else [k, b[1], max(b[2], h), min(b[3], lo), c, 0.0]
+    return [tuple(b) for _, b in sorted(out.items())]
+
+
+def month_span(t: int) -> int:
+    """Length in seconds of the trading month that starts at t (28 to 31 days, 1 h more or less across a DST change)."""
+    from app.data.market_hours import trading_month_start
+
+    return trading_month_start(t + 32 * 86400) - t
+
+
+def keep_whole(bars: list[tuple], span, covered: list[tuple[int, int]]) -> list[tuple]:
     """Only real candles: a candle whose whole time span lies in received files, plus the newest one that is still
     filling up (it starts inside the newest received stretch and runs past its end). A candle cut by the window edge
     or by a file not downloaded yet would show a wrong open, high or low, so it is left out — never stitched."""
     if not covered:
         return []
     last_a, last_z = covered[-1]
-    return [b for b in bars if any(a <= b[0] and b[0] + span <= z for a, z in covered)
-            or (last_a <= b[0] < last_z < b[0] + span)]
+    length = span if callable(span) else (lambda _t: span)  # a month has no fixed length
+    return [b for b in bars if any(a <= b[0] and b[0] + length(b[0]) <= z for a, z in covered)
+            or (last_a <= b[0] < last_z < b[0] + length(b[0]))]
 
 
 def _merge(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
