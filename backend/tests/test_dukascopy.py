@@ -83,8 +83,11 @@ def test_first_failure_pauses_the_feed(feed):
 
 def test_unverified_instruments_are_refused(feed):
     with pytest.raises(dukascopy.DukascopyUnavailable):
-        dukascopy.h1_bars("EURUSD", 2, now=NOW)
+        dukascopy.h1_bars("GBPUSD", 2, now=NOW)  # EURUSD & co. were verified on 8. 11. 2026, GBPUSD not yet
+    with pytest.raises(dukascopy.DukascopyUnavailable):
+        dukascopy.month_hours("GBPUSD", 2026, 9, now=NOW)
     assert feed["seen"] == []
+    assert {"EURUSD", "USDJPY", "USA500IDXUSD", "DOLLARIDXUSD", "VOLIDXUSD"} <= set(dukascopy.POINT)
 
 
 def test_xauusd_quote_is_delayed_with_exact_time_never_live(feed, monkeypatch):

@@ -140,6 +140,7 @@ def sources():
         "stale_inputs": list(service.STALE_INPUTS.values()),
         "fred_last_source": __import__("app.connectors.fred", fromlist=["LAST_SOURCE"]).LAST_SOURCE,
         "keys": secrets.status(),
+        "tickbase": __import__("app.connectors.tickbase", fromlist=["last_check"]).last_check(),
         "mt5": {"settings": settings_store.get("mt5"), "terminals": mt5.discover_terminals(), "package": _mt5_package()},
         "oanda": {"settings": settings_store.get("oanda"), "token_set": bool(secrets.get("OANDA_API_TOKEN"))},
         "legend": quality.LABELS_CS,
@@ -205,6 +206,18 @@ def data_test():
 
 
 _test_lock = threading.Lock()
+
+
+@router.get("/intermarket/intel")
+def intermarket_intel(tf: str = "D1", refresh: bool = False, session: Session = Depends(get_session)):
+    """Intermarket Intelligence: gold's correlations with the other markets on synchronised data (D1 = US closes of the
+    same day, H1 = the same UTC hours), with window, observations, significance, stability, change, breakdown,
+    confirmation of gold's move, discovered pairs and lead/lag. Correlation is not causation."""
+    from app.market import intermarket_intel
+
+    if tf not in intermarket_intel.WINDOWS:
+        raise HTTPException(status_code=400, detail=f"Časový rámec jen {', '.join(intermarket_intel.WINDOWS)}.")
+    return intermarket_intel.get(session, tf, refresh=refresh)
 
 
 @router.get("/ai/status")

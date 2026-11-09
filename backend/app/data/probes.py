@@ -119,6 +119,24 @@ def _p_worldbank() -> tuple[int, str | None, str]:
     return len(prices), (last + "-01") if last and len(last) == 7 else last, "monthly"
 
 
+def _p_tickbase() -> tuple[int, str | None, str]:
+    """TickBase's public status (no key, no quota): is its gold feed as fresh as the market allows?"""
+    from app.connectors import tickbase
+
+    now = dt.datetime.now(dt.timezone.utc)
+    feed = tickbase._metal_feed(tickbase.source_status(), "XAU")
+    as_of = quality.parse_time(feed.get("as_of")) if feed else None
+    if as_of is None:
+        raise RuntimeError("TickBase neuvádí čas posledních dat zlata")
+    from app.data import market_hours, universe
+
+    is_open = market_hours.state(universe.get("XAUUSD"), now).get("state") == market_hours.OPEN
+    fresh = tickbase.freshness(as_of, now, is_open, tickbase._last_dukascopy())
+    if fresh["status"] == quality.STALE:
+        raise RuntimeError(fresh["text"])
+    return 1, as_of.isoformat(), "daily"
+
+
 PROBES: list[tuple[str, str, Callable]] = [
     ("kraken", "Kraken (spot burza)", _p_kraken),
     ("kraken_status", "Kraken — stav burzy", _p_kraken_status),
@@ -136,6 +154,7 @@ PROBES: list[tuple[str, str, Callable]] = [
     ("worldbank", "Světová banka (měsíční ceny komodit)", _p_worldbank),
     ("cftc", "CFTC COT", _p_cftc),
     ("ffcal", "ForexFactory kalendář (export týdne)", _p_ff),
+    ("tickbase", "TickBase (stav zdroje zlata, bez klíče)", _p_tickbase),
     ("rss", "Zprávy (RSS portálů a centrálních bank)", _p_rss),
 ]
 

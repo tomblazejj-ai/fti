@@ -21,10 +21,14 @@ from app.ai import validate
 ALIASES: list[tuple[str, tuple[str, ...]]] = [
     ("DFII10", ("reáln", "tips")),
     ("DGS10", ("10-let", "10let", "10 let", "10y", "treasury", "nominální výnos")),
+    ("DGS2", ("2-let", "2let", "2 let", "2y", "dvoulet")),
     ("VIXCLS", ("vix",)),
+    ("DCOILBRENTEU", ("brent",)),
     ("DCOILWTICO", ("ropa", "ropy", "ropě", "ropu", "wti")),
     ("SP500", ("s&p", "akci", "akcie")),
     ("DXY", ("dxy", "dolar")),
+    ("EURUSD", ("eur/usd", "eurusd")),
+    ("USDJPY", ("usd/jpy", "usdjpy")),
 ]
 RISE = re.compile(r"\b(roste|rostou|rostl\w*|rostouc\w*|stoup\w*|zvyšuj\w*|zvýšil\w*|posiluj\w*|posílil\w*|vzrost\w*|nárůst\w*)")
 FALL = re.compile(r"\b(klesá|klesaj\w*|klesl\w*|klesajíc\w*|pokles\w*|snižuj\w*|snížil\w*|oslabuj\w*|oslabil\w*)")
@@ -33,7 +37,10 @@ _CLAUSE = re.compile(r"[.;,:]\s|\s(?:ale|zatímco|avšak|kdežto|a)\s")
 _HYPHENS = str.maketrans({"‐": "-", "‑": "-", "‒": "-", "–": "-", "−": "-", " ": " "})
 
 
-_INDICATOR = re.compile(r"(?i)\b(?:ema|sma|ma|rsi|adx|atr|macd)\s?\d+(?:\s?/\s?\d+)*")  # "EMA20/50" names, not values
+_POSITIVE = re.compile(r"\b(kladn\w*|pozitivn\w*|souběžn\w*)")
+_NEGATIVE = re.compile(r"\b(záporn\w*|negativn\w*|opačn\w*|inverzn\w*)")
+_RELATION = re.compile(r"korel|\bvztah")
+_INDICATOR = validate.INDICATOR  # "EMA20/50" names, not values — one rule for both checks
 
 
 def _norm(text: str) -> str:
@@ -110,7 +117,7 @@ def drop(output: dict, problems: list[dict]) -> tuple[dict, list[dict], list[dic
 
 # a value written next to an indicator's name must be that indicator's value in the cited facts ("EMA20 4049.16")
 LABELS = {"EMA20": r"ema\s?20", "EMA50": r"ema\s?50", "ADX": r"adx", "ATR": r"atr", "swing high": r"swing\s?high",
-          "swing low": r"swing\s?low"}
+          "swing low": r"swing\s?low", "SMA50": r"sma\s?50(?!\d)", "SMA200": r"sma\s?200(?!\d)", "RSI14": r"rsi\s?14(?!\d)"}
 _VALUE = r"\s*(?:\(|na|je|=|:|kolem|u|okolo)?\s*[≈~]?\s*(-?\d+(?:[.,]\d+)?)"
 
 
@@ -137,11 +144,17 @@ def _label_values(low_text: str, cited_facts: list[dict]) -> list[str]:
 def attribution(output, facts: list[dict]) -> list[dict]:
     """[{path, text, problem}] — empty when every point holds."""
     by_id = {f["id"]: f for f in facts}
-    series = {f["rada"]: f for f in facts if f.get("rada")}
+    series: dict[str, dict] = {}
+    for f in facts:  # a fact with the series' direction wins over one that only carries its correlation (Intermarket)
+        if f.get("rada") and (f.get("smer") or f["rada"] not in series):
+            series[f["rada"]] = f
     corr_owner: dict[float, set[str]] = {}
+    corr_sign: dict[str, list[float]] = {}
     for f in facts:
         for r in f.get("korelace") or []:
             corr_owner.setdefault(round(abs(r), 2), set()).add(f["rada"])
+            if abs(r) >= 0.2:  # the sign of a negligible correlation says nothing
+                corr_sign.setdefault(f["rada"], []).append(r)
     problems = []
     for path, text, cited in _points(output):
         low = _norm(text)
@@ -169,6 +182,20 @@ def attribution(output, facts: list[dict]) -> list[dict]:
                         problems.append({"path": path, "text": text, "problem": (
                             f"{series[sid]['co']}: text říká „{'roste' if rise else 'klesá'}“, data FTI ukazují "
                             f"„{real}“ za 5 i 20 dní")})
+        for clause in re.split(r"[.;]\s", low):  # the SIGN of a correlation, per sentence (8. 11.: "vztahy s EUR/USD
+            # … stabilní, ale s negativní korelací" while r = +0.48; later "Vztahy s DXY, S&P 500 a VIX jsou stabilní a
+            # negativní" while S&P's r = +0.39 — a relationship called negative is a correlation sign, too)
+            if not _RELATION.search(clause) or CONDITIONAL.search(clause):
+                continue
+            pos, neg = bool(_POSITIVE.search(clause)), bool(_NEGATIVE.search(clause))
+            if pos == neg:
+                continue
+            for sid in _series_in(clause):
+                vals = corr_sign.get(sid) or []
+                if vals and all(v > 0 for v in vals) and neg or vals and all(v < 0 for v in vals) and pos:
+                    problems.append({"path": path, "text": text, "problem": (
+                        f"korelace zlata s řadou {sid} je v datech FTI {'kladná' if vals[0] > 0 else 'záporná'}, "
+                        f"text ji označuje za {'zápornou' if neg else 'kladnou'}")})
         for m in re.finditer(r"-?\d+[.,]\d+", low):
             owners = corr_owner.get(round(abs(float(m.group(0).replace(",", "."))), 2))
             if not owners or len(owners) > 1 or "korel" not in low:

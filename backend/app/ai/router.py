@@ -72,6 +72,7 @@ PROVIDERS: dict[str, Provider] = {p.id: p for p in (
 ROLES: dict[str, tuple[str, ...]] = {
     "technika": ("fast", "strong"),
     "makro": ("strong", "fast"),
+    "mezitrh": ("fast", "strong"),
     "synteza": ("strong", "fast"),
     "kontrola": ("fast", "strong"),
 }

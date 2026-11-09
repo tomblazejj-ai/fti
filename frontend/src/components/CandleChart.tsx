@@ -16,7 +16,12 @@ function fmt(v: number, digits: number): string {
   return v.toLocaleString("cs-CZ", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-function timeLabel(sec: number, tf: Tf): string {
+function timeLabel(sec: number, tf: Tf, day?: string): string {
+  if ((tf === "D1" || tf === "W1") && day) {
+    // the trading day from the backend: a broker's daily candle starts at 17:00 New York the evening before
+    const [, m, dd] = day.split("-").map(Number);
+    return `${dd}. ${MONTHS[m - 1]}`;
+  }
   const d = new Date(sec * 1000);
   if (tf === "D1" || tf === "W1") return `${d.getDate()}. ${MONTHS[d.getMonth()]}`;
   return `${d.getDate()}. ${d.getMonth() + 1}. ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -48,6 +53,10 @@ export function CandleChart({
   useInterval(reload, 60000);
 
   const rows: CandleRow[] = useMemo(() => (data.data?.tf === tf ? data.data.candles.slice(-120) : []), [data.data, tf]);
+  const days: string[] = useMemo(() => {
+    const all = data.data?.tf === tf ? data.data.days : null;
+    return all && all.length === data.data?.candles.length ? all.slice(-120) : [];
+  }, [data.data, tf]);
 
   const scale = useMemo(() => {
     if (!rows.length) return null;
@@ -138,7 +147,7 @@ export function CandleChart({
             ))}
             {rows.map((r, i) =>
               i % labelEvery === 0 ? (
-                <text key={r[0]} x={x(i)} y={H - 8} className="cc-tick" textAnchor="middle">{timeLabel(r[0], tf)}</text>
+                <text key={r[0]} x={x(i)} y={H - 8} className="cc-tick" textAnchor="middle">{timeLabel(r[0], tf, days[i])}</text>
               ) : null,
             )}
             {kind === "line" || data.data?.line_only ? (
@@ -180,7 +189,7 @@ export function CandleChart({
         )}
         {h && hover !== null && (
           <div className="cchart-tip" style={{ left: `${Math.min(80, (x(hover) / W) * 100)}%` }}>
-            <strong>{timeLabel(h[0], tf === "D1" || tf === "W1" ? tf : "H1")}</strong>
+            <strong>{timeLabel(h[0], tf === "D1" || tf === "W1" ? tf : "H1", hover !== null ? days[hover] : undefined)}</strong>
             <span>O {fmt(h[1], digits)} · H {fmt(h[2], digits)}</span>
             <span>L {fmt(h[3], digits)} · C {fmt(h[4], digits)}</span>
           </div>

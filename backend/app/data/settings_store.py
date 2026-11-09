@@ -53,6 +53,12 @@ DEFAULTS: dict = {
     },
     # variant A: the PC sends its results to the user's own Cloudflare Worker (D1) for the phone; off until set up
     "cloud": {"url": "", "enabled": False},
+    # Intermarket Intelligence in the data cycle: downloads Dukascopy history of 9 markets into the database and stores
+    # its results — OFF until the user turns it on (user's rule: no change of the live database without consent)
+    "intermarket": {"enabled": False},
+    # LIVE DATA ENGINE (streaming quotes, candles from ticks, AI gate) — OFF until the user switches it on: it writes
+    # ticks and candles into the database and makes a valid AI trade signal depend on a LIVE price
+    "live": {"enabled": False},
     # preferred data provider per instrument, e.g. {"XAUUSD": "dukascopy"}; the others stay as fallbacks with their own history
     "preferred_feeds": {},
     "risk": {"account_size": 10000.0, "account_ccy": "USD", "risk_pct": 1.0, "daily_limit_pct": 3.0, "weekly_limit_pct": 6.0},

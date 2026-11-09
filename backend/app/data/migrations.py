@@ -1,5 +1,6 @@
 """One-time data migrations. Each runs exactly once, is recorded in schema_migrations with what it did,
-never deletes or changes existing rows, and can be re-run safely (a second run inserts nothing).
+never deletes rows or changes a price, and can be re-run safely (a second run changes nothing). An aggregate whose
+definition changed is relabelled, never removed (dukascopy_ny_close_grid).
 
 split_price_bars_by_provider (2026-11-01)
     A legacy row without a recorded source gets provider "unknown" — its origin is not guessed.
@@ -25,6 +26,10 @@ PROVIDER_META = {
     "mt5": ("bid", "tick", None),  # MT5 candles are built from the broker's bid; volume = the broker's tick count
     "oanda": ("mid", "tick", None),
     "dukascopy": ("bid", None, 3600),  # hour files appear about an hour late; one bank's volume is not market volume
+    "fxcm": ("bid", None, None),  # FXCM's public weekly archive (FX majors): history only, a week appears after it ended
+    "deriv": ("bid", None, None),  # Deriv live quotes (FTI LIVE engine): candles from the bid (brief 9. 11.)
+    "deriv-mid": ("mid", None, None),  # the first LIVE test version's Deriv candles (mid), moved aside 9. 11.
+    "ctrader": ("bid", None, None),  # the user's broker via cTrader Open API (FTI LIVE engine): candles from the bid
     "kraken": ("trade", "exchange", None),  # trades on the Kraken exchange; volume traded there
     "ecb": ("fixing", None, None),
     "nbp": ("fixing", None, None),
@@ -100,8 +105,33 @@ def add_news_time_basis(conn) -> dict:
     return {"time_basis": {k: v for k, v in conn.execute(text("SELECT time_basis, COUNT(*) FROM news_items GROUP BY time_basis"))}}
 
 
+def dukascopy_ny_close_grid(conn) -> dict:
+    """Dukascopy H4, daily and weekly candles on the broker's grid (9. 11. 2026): the day runs 17:00 → 17:00 New York
+    and H4 lies inside it; before, the day was the UTC day with a one-hour Sunday stub and H4 ran from 00:00 UTC, across
+    the trading day's end. The old candles are aggregates of the minute files, which stay on disk and in market_bars
+    (M1). Nothing is deleted and no price changes: the old candles move under their own provider name "dukascopy-utc",
+    so one history never mixes two grids. Old and new are told apart exactly: the old grid starts on a multiple of
+    4 h / 1 day in UTC, the new one never does (17:00 New York = 21:00 or 22:00 UTC)."""
+    conn.execute(text("UPDATE market_bars SET provider = 'dukascopy-utc', origin = :o WHERE provider = 'dukascopy' "
+                      "AND ((tf IN ('D1', 'W1') AND t % 86400 = 0) OR (tf = 'H4' AND t % 14400 = 0))"),
+                 {"o": "Dukascopy, mřížka UTC (den 00:00–24:00 UTC, H4 od 00:00 UTC) — do 9. 11. 2026"})
+    return {"moved": dict(conn.execute(text("SELECT tf, COUNT(*) FROM market_bars WHERE provider = 'dukascopy-utc' "
+                                            "GROUP BY tf")).all())}
+
+
+def deriv_mid_candles_aside(conn) -> dict:
+    """The first LIVE test version (9. 11. 2026, morning) built Deriv's candles from the mid of bid and ask; the brief
+    (docs/fti-research.md) decided bid. Those candles move under their own provider name "deriv-mid" — nothing deleted,
+    no price changed, the bid history of "deriv" starts clean (told apart exactly by the stored price type)."""
+    conn.execute(text("UPDATE market_bars SET provider = 'deriv-mid' WHERE provider = 'deriv' AND price_type = 'mid'"))
+    return {"moved": dict(conn.execute(text("SELECT tf, COUNT(*) FROM market_bars WHERE provider = 'deriv-mid' "
+                                            "GROUP BY tf")).all())}
+
+
 MIGRATIONS = [("2026-11-01_split_price_bars_by_provider", split_price_bars_by_provider),
-              ("2026-11-07_news_time_basis", add_news_time_basis)]
+              ("2026-11-07_news_time_basis", add_news_time_basis),
+              ("2026-11-09_dukascopy_ny_close_grid", dukascopy_ny_close_grid),
+              ("2026-11-09_deriv_mid_candles_aside", deriv_mid_candles_aside)]
 
 
 def apply_all(bind) -> list[str]:

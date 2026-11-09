@@ -517,6 +517,20 @@ def _run_cycle(session: Session, horizon: str | None) -> ScoreSnapshot:
             session.commit()
 
     _store_market_analysis(session, instrument, snapshots_by_horizon[PRIMARY_HORIZON], now, macro)
+    try:  # TickBase checks the current gold price against Dukascopy (a check source never breaks the cycle)
+        from app.connectors import tickbase
+
+        tickbase.check(session=session)
+    except Exception:  # noqa: BLE001
+        session.rollback()
+        logger.exception("TickBase check failed")
+    try:  # Intermarket Intelligence: a few more Dukascopy hour files (history fills gradually), then the correlations
+        from app.market import intermarket_intel
+
+        intermarket_intel.refresh(session)
+    except Exception:  # noqa: BLE001 — an analysis layer never breaks the cycle
+        session.rollback()
+        logger.exception("Intermarket Intelligence failed")
     return snapshots_by_horizon[horizon or SUPPORTED_HORIZONS[0]]
 
 

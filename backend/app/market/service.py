@@ -18,12 +18,13 @@ from app.connectors import calendar_ics, cot, ecb, ffcal, fred, fred_calendar, i
 from app.connectors.cot import CotUnavailableError
 from app.connectors.fred import FredUnavailableError
 from app.market import intermarket
-from app.market import (central_banks, decision, dxy, econ_calendar, fx_model, headline_risk, market_status, markets, mtf,
+from app.market import (central_banks, decision, dxy, econ_calendar, fx_model, headline_risk, market_status, markets, mtf, regime,
                         scorecard, seasonality, sources, tra)
 from app.market.cot_analysis import analyze as analyze_cot, analyze_usd, long_short_view
 from app.market.technical import MIN_HISTORY, InsufficientPriceHistory, analyze
 from app.scoring.xauusd import FOMC_DECISION_DATES_2026
 from app.verdict import build_verdict
+from app.data.market_hours import trading_date
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +186,7 @@ def gold_bars(now: dt.datetime, warnings: list[str]) -> tuple[dict[str, list], d
 
 
 def _closes(candles: list) -> list[tuple[str, float]]:
-    return [(c.time.date().isoformat(), c.close) for c in candles]
+    return [(trading_date(c.time).isoformat(), c.close) for c in candles]
 
 
 def _tra_section(gold_rows: list[dict], candles: dict, dxy_candles: dict, ecb_rates: dict | None, now: dt.datetime,
@@ -222,6 +223,23 @@ def _tra_section(gold_rows: list[dict], candles: dict, dxy_candles: dict, ecb_ra
     return score, ({k: v for k, v in long_season.items() if v} or None), cot_usd
 
 
+INTERMARKET_MAX_AGE = dt.timedelta(days=3)
+
+
+def _recent_intermarket(now: dt.datetime) -> dict | None:
+    """The last Intermarket Intelligence result (D1) — it is computed after this analysis in the cycle, so it is the one of
+    the previous cycle; older than 3 days (switched off, no data) it is not used."""
+    from app.data import store
+
+    payload, _ = store.cache_get("intermarket:intel:D1")
+    try:
+        at = dt.datetime.fromisoformat(str((payload or {}).get("computed_at")))
+    except ValueError:
+        return None
+    at = at if at.tzinfo else at.replace(tzinfo=dt.timezone.utc)
+    return payload if now - at <= INTERMARKET_MAX_AGE else None
+
+
 def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict | None = None,
                             macro: dict | None = None, now: dt.datetime | None = None) -> tuple[dict, list[str]]:
     """Returns (payload, warnings). Never raises for a data problem — a
@@ -249,7 +267,7 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
     daily = candles.get("D1", [])
     if len(daily) >= MIN_HISTORY:
         try:
-            technical = analyze([c.time.date().isoformat() for c in daily], [c.close for c in daily], unit="USD")
+            technical = analyze([trading_date(c.time).isoformat() for c in daily], [c.close for c in daily], unit="USD")
         except InsufficientPriceHistory as exc:
             warnings.append(f"Trend zlata nelze spočítat: {exc}")
     else:
@@ -302,7 +320,7 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
                 im_series[sid] = _series(sid)
             except FredUnavailableError as exc:
                 warnings.append(f"Mezitržní řada {sid} nedostupná: {exc}")
-        intermarket_view = intermarket.build(im_series, {c.time.date().isoformat(): c.close for c in candles.get("D1", [])}, now)
+        intermarket_view = intermarket.build(im_series, {trading_date(c.time).isoformat(): c.close for c in candles.get("D1", [])}, now)
     except Exception as exc:  # noqa: BLE001 — context only, never a reason to lose the gold analysis
         logger.exception("Intermarket failed")
         warnings.append(f"Mezitržní přehled se nepodařilo sestavit: {exc}")
@@ -327,7 +345,7 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
         dxy_tech = None
         if len(dxy_d1) >= MIN_HISTORY:
             try:
-                dxy_tech = analyze([c.time.date().isoformat() for c in dxy_d1], [c.close for c in dxy_d1], unit="DXY")
+                dxy_tech = analyze([trading_date(c.time).isoformat() for c in dxy_d1], [c.close for c in dxy_d1], unit="DXY")
             except InsufficientPriceHistory:
                 dxy_tech = None
         corr60 = ((dollar.get("correlation") or {}).get("d60") or {}).get("value")
@@ -363,6 +381,14 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
         logger.exception("Markets overview failed")
         warnings.append(f"Přehled trhů se nepodařilo sestavit: {exc}")
     dec = decision.build(verdict, technical, multi_tf, calendar, cot_result, fundamental.get("pillar_breakdown"), now, dollar)
+    regime_view = None  # the market regime (Ú2): context for the AI and the trader, not a vote in the verdict
+    try:
+        regime_view = regime.compute(candles.get("D1", []), multi_tf, technical, gold_vol, intermarket_view, dollar,
+                                     _recent_intermarket(now), {tf: (gold_data.get(tf) or {}).get("source") for tf in gold_data},
+                                     now.isoformat())
+    except Exception as exc:  # noqa: BLE001 — context only, never a reason to lose the gold analysis
+        logger.exception("Market regime failed")
+        warnings.append(f"Režim trhu se nepodařilo určit: {exc}")
     payload = {
         "technical": technical,
         "correlations": correlations,
@@ -385,6 +411,7 @@ def compute_market_analysis(fundamental: dict, next_fomc: str | None, news: dict
         "cot_usd": cot_usd,
         "headline_risk": headline,
         "intermarket": intermarket_view,
+        "regime": regime_view,
         "season_daily": season_daily or None,
         "markets": market_view,
         "calendar_all": _calendar_payload(events_all, now),
@@ -410,10 +437,21 @@ def _title_cs(title: str) -> str:
     return _titles_cs[title]
 
 
+LAST_ACTUALS: dict = {}  # summary of the last fill of official actuals (filled / from cache / pending / checks)
+
+
 def _all_events(us_calendar: dict | None, now: dt.datetime, warnings: list[str]) -> list[dict]:
     """ForexFactory this week (all currencies, with consensus) + rate decisions of the four central
     banks + the official US release calendar for the weeks the FF file does not cover yet."""
     ff = _soft("ffcal", "fred", lambda: ffcal.fetch_week(now), warnings, "Kalendář ForexFactory") or []
+    ff = [dict(e) for e in ff]  # the FF cache stays as FF published it; FTI's own additions go on copies
+    try:  # FF stays the main calendar; the actual of a released event comes from the publisher's official data
+        from app.market import actuals
+
+        LAST_ACTUALS.clear()
+        LAST_ACTUALS.update(actuals.enrich(ff, now))
+    except Exception as exc:  # noqa: BLE001 — the calendar works without actuals
+        warnings.append(f"Skutečné hodnoty z oficiálních zdrojů: {exc}")
     events = []
     for e in ff:
         events.append({**e, "title_cs": _title_cs(e["title_en"]), "timed": True})
@@ -431,12 +469,20 @@ def _all_events(us_calendar: dict | None, now: dt.datetime, warnings: list[str])
     return events
 
 
+CALENDAR_PAST_DAYS = 2  # every event of the last 2 days
+CALENDAR_ACTUAL_DAYS = 7  # released events WITH an official actual stay 7 days (user's decision 2026-11-08)
+
+
 def _calendar_payload(events: list[dict], now: dt.datetime) -> dict:
-    lo, hi = (now - dt.timedelta(days=2)).isoformat(), (now + dt.timedelta(days=21)).isoformat()
-    shown = [e for e in events if lo <= e["datetime"] <= hi and e["currency"] in ("USD", "EUR", "GBP", "JPY")]
+    lo, hi = (now - dt.timedelta(days=CALENDAR_PAST_DAYS)).isoformat(), (now + dt.timedelta(days=21)).isoformat()
+    lo_actual = (now - dt.timedelta(days=CALENDAR_ACTUAL_DAYS)).isoformat()
+    shown = [e for e in events if e["currency"] in ("USD", "EUR", "GBP", "JPY")
+             and (lo <= e["datetime"] <= hi or (e.get("actual") and lo_actual <= e["datetime"] < lo))]
     return {"events": shown, "timezone": "Europe/Prague",
-            "sources": ["ForexFactory (export kalendáře na tento týden, s prognózami)", "Fed, ECB, BoE, BoJ (oficiální termíny zasedání)",
-                        "FRED a BEA (termíny dat USA)"]}
+            "sources": ["ForexFactory (export kalendáře na tento týden, s prognózami) — hlavní kalendář",
+                        "Skutečné hodnoty USA: BLS, BEA, Census, Department of Labor přes ALFRED/FRED (stav ke dni vydání)",
+                        "Fed, ECB, BoE, BoJ (oficiální termíny zasedání)", "FRED a BEA (termíny dat USA)"],
+            "actuals": {k: v for k, v in LAST_ACTUALS.items() if k != "errors"}}
 
 
 def _yoy_index(series: dict[str, float] | None) -> dict[str, float]:

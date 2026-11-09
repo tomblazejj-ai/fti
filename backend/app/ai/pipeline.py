@@ -68,23 +68,35 @@ SYSTEM = (
 )
 STAGES = [
     # role, areas of the context, max answer tokens, instruction
-    ("makro", ("fundament", "mezitrh", "pozice", "kalendar", "zpravy", "sezonnost", "kvalita"), 1600,
+    ("makro", ("fundament", "mezitrh", "pozice", "kalendar", "zpravy", "sezonnost", "rezim", "kvalita"), 1600,
      "Jsi makroekonomický a fundamentální specialista pro {code}. Vyhodnoť: model FTI a jeho složky (data FRED s daty "
      "zveřejnění), sazby a výnosy, reálný výnos, VIX, ropu a akcie (korelace = souběh, ne příčina), pozice fondů a retailu "
      "(COT), zprávy a riziko titulků, nadcházející události kalendáře a sezónnost. Uveď argumenty pro růst a pro pokles "
      "zlata, co sledovat a co chybí nebo je zastaralé. V každém seznamu nejvýš 4 krátké body."),
-    ("technika", ("trh", "technika", "dolar", "volatilita", "kvalita"), 1400,
+    ("mezitrh", ("intermarket", "intermarket_souhrn", "kvalita"), 1400,
+     "Jsi intermarketový specialista pro {code}. Máš korelace zlata s ostatními trhy z Intermarket Intelligence FTI: "
+     "synchronizované výnosy, okno, počet pozorování, p a q, stabilita, změna proti předchozímu oknu, rozpad vztahu, kvalita "
+     "dat a zda trh potvrzuje nebo odporuje poslednímu pohybu zlata. Vyhodnoť, které vztahy jsou pevné a stabilní, které se "
+     "rozpadají nebo jsou málo spolehlivé (CFD, vypočtený index, málo pozorování, posun uzávěrek), a zda mezitrh pohyb zlata "
+     "potvrzuje. Korelace je souběh, ne příčina — nevymýšlej ekonomické vysvětlení, které ve faktech není. Uveď argumenty "
+     "pro růst a pro pokles, co sledovat a co chybí. V každém seznamu nejvýš 4 krátké body."),
+    ("technika", ("trh", "technika", "dolar", "volatilita", "rezim", "kvalita"), 1400,
      "Jsi technický specialista pro {code}. Vyhodnoť stav trhu a stáří cen, trendy M15/H1/H4/D1 (EMA20/50, ADX, ATR), "
      "swingová maxima a minima jako možné úrovně potvrzení a invalidace, volatilitu (ATR, GVZ) a dolar (trend a úrovně DXY, "
-     "korelace se zlatem). Uveď argumenty pro růst a pro pokles, co sledovat a co chybí. V každém seznamu nejvýš 4 krátké body."),
+     "korelace se zlatem) a režim trhu (trend × pásmo, volatilita). Uveď argumenty pro růst a pro pokles, co sledovat a co "
+     "chybí. V každém seznamu nejvýš 4 krátké body."),
 ]
-SYNTHESIS = ("synteza", ("trh", "engine", "kalendar", "kvalita", "specialista"), 3200,
+SYNTHESIS = ("synteza", ("trh", "engine", "rezim", "kalendar", "kvalita", "specialista", "intermarket_souhrn"), 3200,
              "Jsi hlavní analytik FTI pro {code}. Máš závěry specialistů (fakta „Závěr specialisty …“), pravidlový verdikt FTI a "
              "klíčová fakta. Rozhodni LONG, SHORT, nebo NO TRADE a horizont. Když se technika a makro rozcházejí, když je trh "
              "zavřený nebo ceny nejsou čerstvé, nebo když se blíží důležitá událost, zvaž NO TRADE a vysvětli proč. U LONG i "
              "SHORT scénáře uveď podmínky potvrzení a invalidace — úrovně ber jen z faktů (swing high/low, EMA, úrovně DXY). "
              "Uveď i opačný scénář. Ve „vztah_k_enginu“ porovnej závěr s pravidlovým verdiktem FTI; když nesouhlasíš, řekni "
-             "proč — nevytvářej umělou shodu. „pro“ a „proti“ se týkají doporučení. Buď stručný: v každém seznamu nejvýš "
+             "proč — nevytvářej umělou shodu. „pro“ a „proti“ se týkají doporučení. Nehledej jen potvrzení: když mezitrh "
+             "(fakta „Mezitrh … potvrzení pohybu zlata“) pohyb, na který doporučení navazuje, nepotvrzuje, uveď to v „proti“ "
+             "nebo v „rizicích“ s odkazem na ten fakt a zvaž NO TRADE. Režim trhu (fakta „Režim trhu …“) říká, jaký typ "
+             "obchodu teď dává smysl: v pásmu bez trendu neber průraz sám jako potvrzení, při zvýšené volatilitě uveď širší "
+             "stop-loss a menší pozici. Buď stručný: v každém seznamu nejvýš "
              "3 krátké body, nejvýš 3 scénáře.")
 KEY_TECH = ("Swingový trend", "Celkový trend", "Technika H4", "Technika D1", "Úrovně DXY")
 BUDGET_TOKENS = 7200  # Groq 8 000 tokens a minute per model, 90 % used at most
@@ -130,7 +142,7 @@ def _specialist_fact(p: Packet, stage: dict) -> None:
                 f"Pro pokles: {_points_text(o.get('pro_pokles'))}. Sledovat: {_points_text(o.get('sledovat'))}.")[:1100])
 
 
-def rules(out: dict) -> list[str]:
+def rules(out: dict, facts: list[dict] | None = None) -> list[str]:
     """What a trading scenario must contain beyond the schema."""
     problems = []
     rec = out.get("doporuceni")
@@ -139,7 +151,32 @@ def rules(out: dict) -> list[str]:
         mine = [s for s in scen if s.get("typ") == rec]
         if not mine or not mine[0].get("potvrzeni") or not mine[0].get("invalidace"):
             problems.append(f"Doporučení {rec} nemá scénář s podmínkami potvrzení i invalidace.")
+        # the user's rule: FTI must not only look for confirmation — a recommendation that continues a move the intermarket
+        # contradicts has to say so (in "proti" or "rizika", citing the Intermarket fact)
+        cited = {i for k in ("proti", "rizika") for pt in out.get(k) or [] if isinstance(pt, dict) for i in pt.get("fakta") or []}
+        for f in facts or []:
+            m = f.get("mezitrh")
+            if m and m.get("verdict") == "odporuje" and m.get("gold_pct") and (rec == "LONG") == (m["gold_pct"] > 0)                     and f["id"] not in cited:
+                problems.append(f"Doporučení {rec} navazuje na pohyb zlata, kterému mezitrh ({m['tf']}) odporuje, a neuvádí to "
+                                f"v „proti“ ani v „rizicích“ ({f['id']}).")
     return problems  # a condition without a cited fact is removed by FTI's independent check (check.py), not fatal
+
+
+def _live_gate(code: str, final: dict) -> dict | None:
+    """The user's rule (9. 11. 2026): without a current price no valid trade signal. Applies while the LIVE engine runs;
+    a LONG / SHORT made without a LIVE price becomes NO TRADE, and the reason is stored and shown."""
+    from app.live import engine as live_engine, runner as live_runner
+
+    lr = live_runner.get()
+    allowed, why = live_engine.signal_allowed(lr.engine if lr else None, code)
+    if allowed is None:
+        return None
+    gate = {"allowed": allowed, "reason": why, "ai_recommendation": final.get("doporuceni")}
+    if not allowed and final.get("doporuceni") in ("LONG", "SHORT"):
+        final["doporuceni"] = "NO TRADE"
+        final["shrnuti"] = f"{why} (AI navrhovala {gate['ai_recommendation']}.) " + str(final.get("shrnuti") or "")
+        gate["overridden"] = True
+    return gate
 
 
 def run(session, code: str = "XAUUSD", reason: str = "na požádání", priority: str = "normal",
@@ -148,6 +185,12 @@ def run(session, code: str = "XAUUSD", reason: str = "na požádání", priority
     from app.models import AnalysisRecord
 
     now = now or dt.datetime.now(UTC)
+    from app.live import engine as live_engine, runner as live_runner
+
+    lr = live_runner.get()
+    allowed, why = live_engine.signal_allowed(lr.engine if lr else None, (code or "XAUUSD").upper())
+    if allowed is False:  # brief 9. 11.: without a LIVE price the code decides NO TRADE before any AI call
+        return {"status": "unavailable", "text": f"NO TRADE — {why} AI se nevolala.", "no_trade": True}
     try:
         facts, meta = context.trade(session, code, quote_fn=quote_fn)
     except NotReady as exc:
@@ -172,6 +215,8 @@ def run(session, code: str = "XAUUSD", reason: str = "na požádání", priority
         try:
             for role, areas, max_tokens, instruction in STAGES:
                 instr = instruction.format(code=code)
+                if role == "mezitrh" and not any(f.get("oblast") == "intermarket" for f in p.facts):
+                    continue  # no synchronised Intermarket data: no specialist without facts (listed as missing in the context)
                 sub = _fit(_subset(p.facts, areas), instr, max_tokens)
                 msg = _message(instr, sub)
                 r = router.run_role(session, role, [{"role": "system", "content": SYSTEM}, {"role": "user", "content": msg}],
@@ -205,13 +250,14 @@ def run(session, code: str = "XAUUSD", reason: str = "na požádání", priority
         removed, stuck = [], []
         if verdict["ok"]:
             final, removed, stuck = check.drop(final, check.attribution(final, p.facts))
-        problems = rules(final)
+        problems = rules(final, p.facts)
         verdict = {**verdict, "rules": problems, "attribution": [x["problem"] for x in stuck],
                    "removed": [{"text": x["text"], "problem": x["problem"]} for x in removed],
                    "ok": verdict["ok"] and not problems and not stuck}
         stages.append({"role": role, "provider": r.provider, "model": r.model, "output": None, "validation": verdict,
                        "facts_used": [f["id"] for f in sub], "tokens": {"in": r.tokens_in, "out": r.tokens_out},
                        "seconds": round(r.seconds, 2), "attempts": r.attempts})
+        gate = _live_gate(code, final)
         out = final
         tok_in = sum(s["tokens"]["in"] for s in stages)
         tok_out = sum(s["tokens"]["out"] for s in stages)
@@ -220,7 +266,8 @@ def run(session, code: str = "XAUUSD", reason: str = "na požádání", priority
                              payload={"task": TASK, "key": key, "input_hash": input_hash, "facts": p.facts, "output": final,
                                       "raw_output": r.content, "validation": verdict, "priority": priority, "stages": stages,
                                       "tokens": {"in": tok_in, "out": tok_out}, "seconds": round(time.monotonic() - t0, 1),
-                                      "providers": sorted({s["provider"] for s in stages}), "missing": meta.get("missing")})
+                                      "providers": sorted({s["provider"] for s in stages}), "missing": meta.get("missing"),
+                                      "live_gate": gate})
         session.add(rec)
         session.commit()
         return {"status": "ok" if verdict["ok"] else "invalid",

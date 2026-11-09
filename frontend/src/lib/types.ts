@@ -108,6 +108,8 @@ export interface CandlesResponse {
   source: string;
   provider?: string | null;
   candles: CandleRow[];
+  /** D1 / W1: the trading day of each candle (YYYY-MM-DD) — a broker candle starts at 17:00 New York the evening before */
+  days?: string[] | null;
   line_only?: boolean;
   quality?: DataQuality;
   proxy?: boolean;
@@ -309,6 +311,13 @@ export interface CalendarItem {
   previous: string | null;
   source: string;
   url?: string;
+  /** released USD event: the official value on the release day (BLS, BEA, Census, DOL via ALFRED) */
+  actual?: string | null;
+  actual_source?: string;
+  /** "ověřeno u vydavatele" only when the publisher's own numbers agree; otherwise said plainly */
+  actual_status?: string;
+  actual_note?: string;
+  previous_revised?: string;
 }
 
 export interface CalendarAll {
@@ -424,4 +433,150 @@ export interface AiTestResult {
   seconds?: number;
   limits?: Record<string, number>;
   until?: string | null;
+}
+
+/* ---- Intermarket Intelligence: gold's correlations with other markets on synchronised returns (not causation) ---- */
+export interface ImWindow {
+  window: number;
+  n: number;
+  n_eff: number | null;
+  r: number | null;
+  p: number | null;
+  ci95: number[] | null;
+  strength: string;
+  sufficiency: string;
+}
+
+export interface ImRelation {
+  b: string;
+  b_code: string;
+  label: string;
+  category: string;
+  tf: string;
+  observations_total: number;
+  windows: ImWindow[];
+  last_common: string | null;
+  sources: string[];
+  proxy: boolean;
+  related: string | null;
+  q_main?: number;
+  stability?: { verdict: string; same_sign_share: number; mean: number };
+  change?: { r_now: number; r_prev: number; delta: number; p: number; significant: boolean };
+  breakdown?: { state: string; r_short?: number; r_long?: number; text?: string };
+  move?: { bars: number; gold_pct: number; other: number; other_unit: string; verdict: string; text: string; from?: string; until: string };
+  quality: { label: string; issues: string[] };
+}
+
+export interface IntermarketResult {
+  tf: string;
+  target?: string;
+  target_label?: string;
+  computed_at: string;
+  error?: string;
+  main_window?: number;
+  windows?: number[];
+  relations: ImRelation[];
+  source_checks?: ImRelation[];
+  discovered?: { a: string; b: string; r: number; n: number; q: number; related: string | null }[];
+  method?: string;
+  causality?: string;
+}
+
+// Market regime of gold (Ú2) — /api/regime
+export interface RegimeInput {
+  name: string;
+  value: number | string | null;
+  unit?: string | null;
+  source?: string | null;
+  as_of?: string | null;
+}
+
+export interface RegimeDimension {
+  key: string;
+  label: string;
+  state: string;
+  word: string;
+  detail: string;
+  implication: string | null;
+  inputs: RegimeInput[];
+  available: boolean;
+}
+
+export interface MarketRegime {
+  as_of: string;
+  computed_at: string;
+  label: string;
+  summary: string;
+  dimensions: RegimeDimension[];
+  atr?: { d1: number; pct_of_price: number; percentile: number; window: number; as_of: string | null } | null;
+  missing: string[];
+  method: string;
+  note: string;
+}
+
+// LIVE terminal (test version) — /api/live/*
+export type LiveStatus = "LIVE" | "DELAYED" | "HISTORICAL" | "UNAVAILABLE";
+
+export interface LiveProviderRow {
+  provider: string;
+  symbol: string;
+  role: "primary" | "backup" | "check";
+  product: string;
+  age_s: number | null;
+  fresh: boolean;
+  in_session: boolean;
+  compat: { pairs: number; ok: boolean; text: string; median_abs?: number; offset?: number; tolerance?: number } | null;
+}
+
+export interface LiveQuote {
+  code: string;
+  label: string;
+  name: string;
+  kind: string;
+  digits: number;
+  status: LiveStatus;
+  data_status?: LiveStatus;
+  status_cs: string;
+  /** MARKET STATUS from the instrument's schedule (OPEN, CLOSED, …) — never from whether data arrive */
+  market_status?: string;
+  market_status_cs?: string;
+  /** "TRH OTEVŘEN – DATA NEAKTUÁLNÍ" when the market is open and the data are not LIVE */
+  banner?: string | null;
+  failover: boolean;
+  notes: string[];
+  providers: LiveProviderRow[];
+  provider?: string;
+  symbol?: string;
+  product?: string;
+  price_type?: string;
+  bid?: number | null;
+  ask?: number | null;
+  spread?: number | null;
+  mid?: number | null;
+  last_trade?: number | null;
+  time_basis?: "quote" | "receive";
+  quote_time?: string;
+  received_at?: string;
+  age_s?: number | null;
+  prev_close?: number | null;
+  prev_close_day?: string | null;
+  change?: number | null;
+  change_pct?: number | null;
+}
+
+export interface LiveSnapshot {
+  version: number;
+  at: string;
+  running: boolean;
+  instruments: LiveQuote[];
+}
+
+export interface LiveCandles {
+  code: string;
+  tf: string;
+  provider: string | null;
+  product: string | null;
+  price_type: string | null;
+  candles: [number, number, number, number, number][];
+  quote: LiveQuote;
 }

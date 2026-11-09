@@ -409,10 +409,27 @@ def get_candles(code: str, tf: str = "H1"):
     if not bs.ok:
         raise HTTPException(status_code=503, detail=" ".join(bs.notes) or "Data nejsou k dispozici.")
     rows = _chart_rows(bs.bars[-600:])
-    return {"tf": tf, "code": code, "source": bs.source, "provider": bs.provider, "candles": rows, "line_only": bs.close_only,
+    return {"tf": tf, "code": code, "source": bs.source, "provider": bs.provider, "candles": rows, "days": _day_labels(rows, tf),
+            "line_only": bs.close_only,
             "quality": bs.quality, "proxy": bs.proxy, "notes": bs.notes, "instrument": info["instrument"], "kind": bs.kind,
             "market": bs.market, "last_quote": bs.last_quote,
             "kind_cs": info["kind_cs"], "volume_note": bs.meta.get("volume"), "fetched_at": dt.datetime.now(dt.timezone.utc)}
+
+
+def _day_labels(rows: list[list], tf: str) -> list[str] | None:
+    """The trading day of each daily / weekly candle (YYYY-MM-DD). A broker candle starts at 17:00 New York the evening
+    before, so the local time of its start would show the previous date; a week is named by its Monday."""
+    if tf not in ("D1", "W1"):
+        return None
+    from app.data.market_hours import trading_date
+
+    out = []
+    for r in rows:
+        d = trading_date(r[0])
+        if tf == "W1" and d.weekday() == 6:  # a week starting Saturday 17:00 New York: its trading date is Sunday
+            d += dt.timedelta(days=1)
+        out.append(d.isoformat())
+    return out
 
 
 def _chart_rows(bars: list) -> list[list]:
@@ -511,6 +528,19 @@ def get_market(code: str, session: Session = Depends(get_session)):
     if card is None:
         raise HTTPException(status_code=404, detail="Tento trh v přehledu není.")
     return {**card, "computed_at": payload["computed_at"]}
+
+
+@router.get("/regime")
+def get_regime(code: str = "XAUUSD", session: Session = Depends(get_session)):
+    """The market regime of gold (Ú2): trend × range, volatility, risk mood, dollar, real yields and the intermarket
+    relationships — deterministic, every input with its source and time. Context, not a vote in the verdict."""
+    if code.upper() != "XAUUSD":
+        raise HTTPException(status_code=404, detail="Režim trhu je zatím jen pro XAU/USD.")
+    payload = _latest_payload(session)
+    rg = payload.get("regime")
+    if not rg:
+        raise HTTPException(status_code=404, detail="Režim trhu se ještě počítá — přijde s nejbližším výpočtem FTI.")
+    return {**rg, "computed_at": payload["computed_at"]}
 
 
 @router.get("/calendar")

@@ -4,6 +4,7 @@ import { TickerBar } from "./components/TickerBar";
 import { STATIC } from "./lib/api";
 import { CalendarPage } from "./pages/CalendarPage";
 import { DataPage } from "./pages/DataPage";
+import { LivePage } from "./pages/LivePage";
 import { Home } from "./pages/Home";
 import { MarketDetail } from "./pages/MarketDetail";
 import { NewsPage } from "./pages/NewsPage";
@@ -27,6 +28,8 @@ const isHome = (h: string) => h === "#/" || h === "#" || h === "" || h.startsWit
 
 const NAV: { href: string; label: string; icon: IconName; match: (h: string) => boolean }[] = [
   { href: "#/", label: "Přehled", icon: "home", match: isHome },
+  // the LIVE terminal streams from the PC app's engine — the phone snapshot has no stream (yet)
+  ...(STATIC ? [] : [{ href: "#/zive", label: "Živě", icon: "bolt" as IconName, match: (h: string) => h.startsWith("#/zive") }]),
   { href: "#/kalendar", label: "Kalendář", icon: "calendar", match: (h) => h.startsWith("#/kalendar") },
   { href: "#/zpravy", label: "Zprávy", icon: "news", match: (h) => h.startsWith("#/zpravy") },
   { href: "#/data", label: "Data", icon: "layers", match: (h) => h.startsWith("#/data") },
@@ -35,6 +38,7 @@ const NAV: { href: string; label: string; icon: IconName; match: (h: string) => 
 function Page({ hash }: { hash: string }) {
   const market = hash.match(/^#\/trh\/([A-Za-z0-9]+)/);
   if (market) return <MarketDetail key={market[1]} code={market[1].toUpperCase()} />;
+  if (hash.startsWith("#/zive")) return <LivePage />;
   if (hash.startsWith("#/kalendar")) return <CalendarPage />;
   if (hash.startsWith("#/zpravy")) return <NewsPage />;
   if (hash.startsWith("#/data")) return <DataPage />;
@@ -61,7 +65,7 @@ export function App() {
         </nav>
       </header>
       <TickerBar />
-      <div key={hash.replace(/^#\/(trh\/\w+|kalendar|zpravy|data).*$/, "$1")} className="page-enter">
+      <div key={hash.replace(/^#\/(trh\/\w+|zive|kalendar|zpravy|data).*$/, "$1")} className="page-enter">
         <Page hash={hash} />
       </div>
       <nav className="tabbar" aria-label="Menu">

@@ -358,3 +358,163 @@ def test_a_value_next_to_an_indicator_must_be_that_indicator():
     assert problems["$.potvrzeni[0]"] == "EMA20 je v citovaných údajích 4049.16, ne 4069.55"  # the close, not EMA20
     assert "$.potvrzeni[1]" not in problems
     assert problems["$.potvrzeni[2]"] == "bod se neopírá o žádný údaj FTI"
+
+
+def test_indicator_names_are_not_numbers_regression_cloud_2026_11_08():
+    """The real technical answer from the cloud run 42490163736: "EMA20/50" made "/50" an unknown number and the whole
+    role was thrown away. Names stay names; a value next to them is still checked."""
+    from app.ai import validate
+
+    facts = [{"id": "F5", "co": "Zdroj svíček XAUUSD", "hodnota": "", "text": "zdroj není připojen."},
+             {"id": "F24", "co": "Úrovně DXY", "hodnota": "DXY: nejbližší support 101,63 (−0,7 %), rezistence 102,56 (+0,3 %).",
+              "text": "Swingový trend dolaru roste."}]
+    out = {"sledovat": [{"text": "Získat aktuální svíčková data XAUUSD (M15/H1/H4/D1) pro výpočet EMA20/50, ADX a ATR.",
+                         "fakta": ["F5"]},
+                        {"text": "Sledovat DXY a jeho úrovně support 101,63 a resistance 102,56.", "fakta": ["F24"]}]}
+    assert validate.unknown_numbers(out, facts) == []
+    assert validate.unknown_numbers({"t": "EMA50 je na 4063"}, facts) == ["4063"]  # a value is still checked
+
+
+# --- Intermarket Intelligence inside the AI analysis (user's request 8. 11. 2026: not a stand-alone endpoint) ---
+def _rel(code, label, src, r60, r250, move_verdict, other, issues=()):
+    return {"b": f"{code}@{src}", "b_code": code, "label": label, "sources": ["Dukascopy (bid, UTC)", src], "related": None,
+            "last_common": "2026-11-06T22:00:00+00:00", "q_main": 0.001,
+            "windows": [{"window": 60, "r": r60, "n": 60, "n_eff": 55.0, "p": 0.0002}, {"window": 250, "r": r250, "n": 250, "n_eff": 240.0, "p": 0.0}],
+            "change": {"r_prev": r60 - 0.09, "delta": 0.09, "significant": False}, "stability": {"verdict": "stabilní"},
+            "breakdown": {"state": "drží"}, "quality": {"label": "použitelná", "issues": list(issues)},
+            "move": {"bars": 5, "from": "2026-10-30T22:00:00+00:00", "until": "2026-11-06T22:00:00+00:00", "gold_pct": 5.032,
+                     "other": other, "other_unit": "%", "verdict": move_verdict}}
+
+
+IM_D1 = {"tf": "D1", "main_window": 60, "computed_at": "2026-11-08T17:00:00+00:00", "relations": [
+    _rel("DXY*", "Dolarový index DXY*", "výpočet FTI z MT5 + ECB", -0.47, -0.45, "odporuje", 0.333, ["vypočtený index"]),
+    _rel("VIX", "VIX (oficiální, CBOE)", "CBOE", -0.36, -0.30, "odporuje", 32.0),
+    _rel("EURUSD", "EUR/USD", "MT5 broker Purple (historie)", 0.48, 0.45, "neutrální", -0.189)]}
+
+
+@pytest.fixture()
+def with_im(monkeypatch):
+    from app.market import intermarket_intel
+
+    monkeypatch.setattr(intermarket_intel, "get", lambda session, tf, refresh=False:
+                        IM_D1 if tf == "D1" else {"error": "Pro XAUUSD nejsou synchronizovaná data H1.", "relations": []})
+
+
+def test_context_carries_intermarket_and_the_older_correlations_step_aside(db_session, env, with_im):
+    _snap(db_session, env["inst"], PAYLOAD, NOW)
+    fs, meta = context.trade(db_session, "XAUUSD", quote_fn=lambda c: {"available": False})
+    summ = next(f for f in fs if f["co"] == "Mezitrh D1: potvrzení pohybu zlata")
+    assert summ["hodnota"] == "odporuje" and summ["oblast"] == "intermarket_souhrn" and summ["mezitrh"]["gold_pct"] == 5.032
+    assert "Odporují: Dolarový index DXY*, VIX" in summ["text"]
+    dxy = next(f for f in fs if f["co"] == "Korelace zlata s Dolarový index DXY* (D1)")
+    assert dxy["rada"] == "DXY" and dxy["korelace"] == [-0.47, -0.45] and "n 60, efektivně 55" in dxy["text"]
+    assert not any(f["co"] == "Korelace zlata s DXY" for f in fs)  # one correlation per relationship, the synchronised one
+    vix = next(f for f in fs if f["co"] == "VIX")
+    assert "uvádí Intermarket" in vix["text"] and vix["korelace"] == [] and vix["smer"]  # level and direction stay
+    assert any("Intermarket H1" in m for m in meta["missing"])  # missing data are said, not hidden
+
+
+def test_intermarket_specialist_runs_when_there_are_data(db_session, env, with_im):
+    _snap(db_session, env["inst"], PAYLOAD, NOW - dt.timedelta(minutes=10))
+    env["replies"] += [_ok(SPEC, "openai/gpt-oss-120b"), _ok(SPEC, "openai/gpt-oss-20b"), _ok(SPEC, "openai/gpt-oss-20b"),
+                       _ok(_final(), "openai/gpt-oss-120b")]
+    r = tasks.run(db_session, "trade", "XAUUSD", now=NOW)
+    assert [s["role"] for s in r["analysis"]["stages"]] == ["makro", "mezitrh", "technika", "synteza"]
+    im_facts = json.loads(env["seen"][1]["messages"][1]["content"])["fakta"]
+    assert {f.get("oblast") for f in im_facts} <= {"intermarket", "intermarket_souhrn", "kvalita"}
+    last = json.loads(env["seen"][3]["messages"][1]["content"])["fakta"]
+    assert any(f["co"] == "Mezitrh D1: potvrzení pohybu zlata" for f in last)  # the advisor sees the verdict itself
+    assert sum(1 for f in last if f["co"].startswith("Závěr specialisty")) == 3
+
+
+def test_a_long_that_ignores_a_contradicting_intermarket_is_not_verified():
+    facts = [{"id": "F9", "co": "Mezitrh D1: potvrzení pohybu zlata", "hodnota": "odporuje",
+              "mezitrh": {"tf": "D1", "verdict": "odporuje", "gold_pct": 5.03}}]
+    long = _final(doporuceni="LONG")
+    assert any("mezitrh" in p for p in pipeline.rules(long, facts))
+    said = _final(doporuceni="LONG", rizika=[{"text": "Dolar, akcie a VIX růst zlata nepotvrzují.", "fakta": ["F9"]}])
+    assert pipeline.rules(said, facts) == []
+    short = _final(doporuceni="SHORT", scenare=[{"typ": "SHORT", "popis": "x", "potvrzeni": [{"text": "a", "fakta": ["F1"]}],
+                                                  "invalidace": [{"text": "b", "fakta": ["F1"]}]}])
+    assert pipeline.rules(short, facts) == []  # a short against the contradicted rise is not continuing it
+
+
+def test_check_knows_the_new_series_names():
+    from app.ai import check
+
+    facts = [{"id": "F1", "co": "Korelace zlata s EUR/USD (D1)", "hodnota": 0.48, "text": "r +0,48", "rada": "EURUSD", "korelace": [0.48]},
+             {"id": "F2", "co": "Korelace zlata s DXY* (D1)", "hodnota": -0.47, "text": "r −0,47", "rada": "DXY", "korelace": [-0.47]}]
+    ok = {"intermarket": [{"text": "Korelace EUR/USD se zlatem je +0,48.", "fakta": ["F1"]}]}
+    assert check.attribution(ok, facts) == []
+    wrong = {"intermarket": [{"text": "Korelace EUR/USD se zlatem je -0,47.", "fakta": ["F1", "F2"]}]}
+    assert any("patří k řadě" in p["problem"] for p in check.attribution(wrong, facts))
+
+
+def test_the_sign_of_a_correlation_must_match_the_data_regression_8_11():
+    """The intermarket specialist wrote on 8. 11. that gold's relation with EUR/USD is negative while r = +0.48."""
+    from app.ai import check
+
+    facts = [{"id": "F31", "co": "Korelace zlata s EUR/USD (D1)", "hodnota": 0.478, "text": "r +0.478", "rada": "EURUSD", "korelace": [0.478, 0.449]},
+             {"id": "F32", "co": "Korelace zlata s DXY* (D1)", "hodnota": -0.47, "text": "r -0.47", "rada": "DXY", "korelace": [-0.47, -0.452]}]
+    real = {"zaver": "x", "pro_pokles": [{"text": "V dlouhodobých korelacích jsou vztahy s EUR/USD a DXY stabilní, ale s negativní korelací.",
+                                          "fakta": ["F31", "F32"]}]}
+    assert any("EURUSD je v datech FTI kladná" in p["problem"] for p in check.attribution(real, facts))
+    fine = {"pro_pokles": [{"text": "Korelace s DXY je záporná a stabilní.", "fakta": ["F32"]},
+                           {"text": "Korelace s DXY je záporná, s EUR/USD kladná.", "fakta": ["F31", "F32"]},
+                           {"text": "Pokud by korelace s EUR/USD byla záporná, …", "fakta": ["F31"]}]}
+    assert check.attribution(fine, facts) == []
+
+
+def test_a_relationship_called_negative_is_a_correlation_sign_regression_8_11():
+    """Later the same evening (copy of the live data): "Vztahy s DXY, S&P 500 a VIX jsou stabilní a negativní" in the
+    specialist's summary while gold's correlation with the S&P 500 is +0.39 — no word "korelace", so it slipped through."""
+    from app.ai import check
+
+    facts = [{"id": "F32", "co": "Korelace zlata s DXY* (D1)", "hodnota": -0.47, "text": "r -0.47", "rada": "DXY", "korelace": [-0.47]},
+             {"id": "F34", "co": "Korelace zlata s S&P 500 (D1)", "hodnota": 0.386, "text": "r +0.386", "rada": "SP500", "korelace": [0.386, 0.372]},
+             {"id": "F35", "co": "Korelace zlata s VIX (D1)", "hodnota": -0.363, "text": "r -0.363", "rada": "VIXCLS", "korelace": [-0.363]}]
+    real = {"zaver": "Mezitrh D1 potvrzuje odpor proti zlatu. Vztahy s DXY, S&P 500 a VIX jsou stabilní a negativní, což podporuje "
+                     "scénář poklesu."}
+    probs = check.attribution(real, facts)
+    assert len(probs) == 1 and "SP500 je v datech FTI kladná" in probs[0]["problem"]
+    fine = {"zaver": "Vztah s VIX je negativní a stabilní. Silný dolar je pro zlato negativní.",
+            "pro_rust": [{"text": "Vztah s S&P 500 je kladný.", "fakta": ["F34"]}]}
+    assert check.attribution(fine, facts) == []
+
+
+def _daily_technique():
+    import math
+
+    from app.market import technical
+
+    start = dt.date(2025, 9, 1)
+    days = [start + dt.timedelta(days=i) for i in range(460)]
+    days = [d for d in days if d.weekday() < 5][:320]
+    closes = [3800 + 2.0 * i + 60 * math.sin(i / 9) for i in range(len(days))]
+    return technical.analyze([d.isoformat() for d in days], closes, unit="USD")
+
+
+def test_context_carries_the_daily_technique_when_it_is_computed(db_session, env):
+    """Ú1 (9. 11.): the daily technique fed the verdict, but the AI only ever got „nespočítána“ — with the long history
+    from Dukascopy it is computed, so SMA50/200, RSI14 and the daily levels must reach the AI with their source and day."""
+    tech = _daily_technique()
+    payload = copy.deepcopy(PAYLOAD)
+    payload["technical"] = tech
+    _snap(db_session, env["inst"], payload, NOW)
+    fs, meta = context.trade(db_session, "XAUUSD", quote_fn=lambda c: {"available": False})
+    daily = next(f for f in fs if f["co"].startswith("Denní technika XAUUSD"))
+    last = tech["history"][-1]
+    assert daily["hodnota"] == tech["trend_label"] and daily["zdroj"] == "Dukascopy" and daily["k"] == tech["as_of"]
+    assert f"SMA200 {round(last['sma200'], 2)}" in daily["text"] and f"SMA50 {round(last['sma50'], 2)}" in daily["text"]
+    assert f"RSI14 {tech['rsi14']}" in daily["text"] and tech["rsi_state"] in daily["text"]
+    levels = [f for f in fs if f["co"] in ("Denní podpory XAUUSD", "Denní rezistence XAUUSD")]
+    assert levels and all(f["oblast"] == "technika" for f in levels)
+    assert not any("denní technika" in m for m in meta["missing"])
+    assert not any(f["hodnota"] == "nespočítána" for f in fs)
+    # the independent check: a value written next to SMA200 / RSI14 must be the one in the cited fact
+    from app.ai import check
+
+    good = {"body": [{"text": f"SMA200 {round(last['sma200'], 2)} drží trend, RSI14 {tech['rsi14']}.", "fakta": [daily["id"]]}]}
+    bad = {"body": [{"text": f"SMA200 {round(last['sma200'] + 40, 2)} drží trend, RSI14 {tech['rsi14']}.", "fakta": [daily["id"]]}]}
+    assert not check.attribution(good, fs)
+    assert any("SMA200" in p["problem"] for p in check.attribution(bad, fs))

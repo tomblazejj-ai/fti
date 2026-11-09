@@ -2,6 +2,8 @@ import type { CSSProperties } from "react";
 import { AiPanel, AiTradePanel } from "../components/AiPanel";
 import { BiasChip, EventList, LivePrice, NewsList } from "../components/Bits";
 import { CandleChart } from "../components/CandleChart";
+import { IntermarketCard } from "../components/IntermarketCard";
+import { RegimeCard } from "../components/RegimeCard";
 import { Icon } from "../components/Icon";
 import { Card, Empty, ErrorState, Skeleton } from "../components/ui";
 import { MarketIcon, ScoreGauge, scoreText, tone } from "../components/Visual";
@@ -76,8 +78,10 @@ export function MarketDetail({ code }: { code: string }) {
 
       {m.retail && <Retail m={m} />}
       <Breakdown m={m} />
-      <AiTradePanel code={m.code} i={8} />
-      <AiPanel code={m.code} i={9} />
+      {m.code === "XAUUSD" && <RegimeCard i={7} />}
+      {m.code === "XAUUSD" && <IntermarketCard i={8} />}
+      <AiTradePanel code={m.code} i={9} />
+      <AiPanel code={m.code} i={10} />
 
       <p className="note">
         Přepočteno {formatDateTime(data.data.computed_at)}. {m.missing.length > 0 && `Bez dat: ${m.missing.join(", ")} — skóre je přepočtené z ostatních kategorií. `}

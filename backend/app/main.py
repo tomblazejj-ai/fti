@@ -34,8 +34,33 @@ async def lifespan(_: FastAPI):
     init_db()
     _load_health()
     scheduler.start()
+    live = _start_live()
     yield
+    if live:
+        from app.live import runner
+
+        runner.stop()
     scheduler.shutdown()
+
+
+def _start_live() -> bool:
+    """The LIVE engine runs only when the user switched it on (settings live.enabled) — it writes ticks and candles."""
+    import os
+
+    from app.data import settings_store
+
+    if os.environ.get("FTI_DISABLE_LIVE") or not (settings_store.get("live", {}) or {}).get("enabled"):
+        return False
+    try:
+        from app.live import runner
+
+        runner.start()
+        return True
+    except Exception:  # noqa: BLE001 — the live terminal must never stop the app
+        import logging
+
+        logging.getLogger(__name__).exception("LIVE engine failed to start")
+        return False
 
 
 app = FastAPI(
@@ -57,6 +82,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from app.api.routes_live import router as live_router  # noqa: E402
+
+app.include_router(live_router)
 app.include_router(fti_router)
 app.include_router(instruments_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
@@ -67,5 +95,16 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+class _Frontend(StaticFiles):
+    """The page itself (index.html) is always revalidated, so a new build shows at the next open (8. 11.: the window kept
+    an old index.html without the Intermarket card); the hashed scripts and styles may stay cached."""
+
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        if (resp.media_type or "").startswith("text/html"):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
 if FRONTEND_DIST.is_dir():
-    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+    app.mount("/", _Frontend(directory=FRONTEND_DIST, html=True), name="frontend")

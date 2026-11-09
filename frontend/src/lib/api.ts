@@ -11,14 +11,18 @@ import type {
   MarketsResponse,
   ProbeRow,
   SourcesResponse,
-  TickersResponse,
-} from "./types";
+  TickersResponse, IntermarketResult, MarketRegime } from "./types";
 
 // Same-origin by default (the web build is served by FastAPI itself).
 let baseUrl = "";
 
 export function configureApi(url: string): void {
   baseUrl = url.replace(/\/$/, "");
+}
+
+/** The API's base URL (same origin unless configured) — for the live stream, which is not a JSON request. */
+export function apiBase(): string {
+  return baseUrl;
 }
 
 export class ApiError extends Error {
@@ -36,6 +40,7 @@ export const STATIC = import.meta.env.VITE_STATIC === "1";
 
 const STATIC_FILES: Record<string, string> = {
   "/api/markets": "data/markets.json",
+  "/api/regime": "data/regime.json",
   "/api/calendar": "data/calendar.json",
   "/api/tickers": "data/tickers.json",
   "/api/data/audit": "data/audit.json",
@@ -47,6 +52,7 @@ export function staticPath(path: string): string | null {
   const [p, q] = path.split("?");
   const m = p.match(/^\/api\/instruments\/([A-Z0-9.]+)\/candles$/);
   if (m) return `data/candles-${m[1]}-${new URLSearchParams(q ?? "").get("tf")}.json`;
+  if (p === "/api/intermarket/intel") return `data/intermarket-${new URLSearchParams(q ?? "").get("tf") ?? "D1"}.json`;
   return STATIC_FILES[p] ?? null;
 }
 
@@ -98,6 +104,8 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 export const api = {
   markets: () => request<MarketsResponse>("/api/markets"),
   calendar: () => request<CalendarAll>("/api/calendar"),
+  intermarket: (tf: string) => request<IntermarketResult>(`/api/intermarket/intel?tf=${tf}`),
+  regime: () => request<MarketRegime>("/api/regime"),
   tickers: () => (STATIC ? staticTickers() : request<TickersResponse>("/api/tickers")),
   candles: (code: string, tf: string) => request<CandlesResponse>(`/api/instruments/${code}/candles?tf=${encodeURIComponent(tf)}`),
   audit: () => request<{ computed_at: string; rows: AuditRow[] }>("/api/data/audit"),

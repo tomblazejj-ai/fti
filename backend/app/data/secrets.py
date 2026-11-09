@@ -18,14 +18,33 @@ KEYS = {
     "OANDA_API_TOKEN": "OANDA v20 (token zdarma k demo účtu, jen tržní data)",
     "GROQ_API_KEY": "Groq AI (jen bezplatný tarif Free, klíč z console.groq.com)",
     "FTI_SYNC_TOKEN": "Token synchronizace s vlastním cloudem FTI (Cloudflare Worker)",
+    "TICKBASE_API_KEY": "TickBase (kontrola a záloha ceny zlata; klíč zdarma po registraci na thetickbase.com)",
+    # Purple Trading cTrader Open API — live quotes of the user's broker (read-only scope "accounts": no trading possible)
+    "CTRADER_CLIENT_ID": "cTrader Open API — Client ID aplikace (openapi.ctrader.com → Applications → Credentials)",
+    "CTRADER_CLIENT_SECRET": "cTrader Open API — Secret aplikace (tamtéž)",
+    "CTRADER_ACCESS_TOKEN": "cTrader Open API — Access token (Applications → Playground, rozsah „accounts“ = jen čtení)",
+    "CTRADER_REFRESH_TOKEN": "cTrader Open API — Refresh token (Playground; FTI s ním token sám obnoví)",
+    # Capital.com Open API (demo) — the brief's primary live source. The identifier is the account's login e-mail: it is
+    # stored only here and sent only to Capital.com's API to open the session (the user's consent, 9. 11. 2026)
+    "CAPITAL_API_KEY": "Capital.com — API klíč (demo účet → Nastavení → API integrace)",
+    "CAPITAL_IDENTIFIER": "Capital.com — přihlašovací e-mail účtu (posílá se jen na API Capital.com)",
+    "CAPITAL_API_PASSWORD": "Capital.com — vlastní heslo k API klíči (ne heslo účtu)",
 }
 _lock = threading.Lock()
 _VALID = re.compile(r"^[A-Za-z0-9_\-\.]{8,200}$")
 # keys whose shape is known: a wrong paste is caught before it is saved
 _FORMATS = {"GROQ_API_KEY": (re.compile(r"^gsk_[A-Za-z0-9]{20,200}$"), "Klíč Groq začíná „gsk_“ a nemá mezery ani jiné znaky."),
-            "FTI_SYNC_TOKEN": (re.compile(r"^[A-Za-z0-9_\-]{32,128}$"), "Token má 32–128 znaků (písmena, číslice, - a _).")}
+            "FTI_SYNC_TOKEN": (re.compile(r"^[A-Za-z0-9_\-]{32,128}$"), "Token má 32–128 znaků (písmena, číslice, - a _)."),
+            "TICKBASE_API_KEY": (re.compile(r"^tb_(live|test)_[A-Za-z0-9_\-]{8,200}$"),
+                                 "Klíč TickBase začíná „tb_live_“ (nebo „tb_test_“) a nemá mezery.")}
 # not even the last characters are shown for these
-_NO_HINT = {"GROQ_API_KEY", "FTI_SYNC_TOKEN"}
+_NO_HINT = {"GROQ_API_KEY", "FTI_SYNC_TOKEN", "TICKBASE_API_KEY", "CTRADER_CLIENT_SECRET", "CTRADER_ACCESS_TOKEN",
+            "CTRADER_REFRESH_TOKEN", "CAPITAL_API_KEY", "CAPITAL_IDENTIFIER", "CAPITAL_API_PASSWORD"}
+# values that are not plain keys: their own format instead of the general one
+_OWN_FORMAT = {"CAPITAL_IDENTIFIER": (re.compile(r"^[^\s@\"'#]+@[^\s@\"'#]+\.[^\s@\"'#]+$"),
+                                      "Zadejte přihlašovací e-mail účtu Capital.com (bez mezer)."),
+               "CAPITAL_API_PASSWORD": (re.compile(r"^[^\s\"'#]{6,128}$"),
+                                        "Heslo k API klíči: 6–128 znaků bez mezer, uvozovek a znaku #.")}
 
 
 def _read_file() -> dict[str, str]:
@@ -65,7 +84,10 @@ def set_key(name: str, value: str) -> None:
     if name not in KEYS:
         raise ValueError("Neznámý klíč.")
     value = value.strip()
-    if value and not _VALID.match(value):
+    if value and name in _OWN_FORMAT:
+        if not _OWN_FORMAT[name][0].match(value):
+            raise ValueError(_OWN_FORMAT[name][1])
+    elif value and not _VALID.match(value):
         raise ValueError("Klíč má neplatný formát (jen písmena, číslice, -, _ a . bez mezer).")
     if value and name in _FORMATS and not _FORMATS[name][0].match(value):
         raise ValueError(_FORMATS[name][1])

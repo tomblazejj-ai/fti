@@ -27,8 +27,12 @@ def quote(code: str, now: dt.datetime | None = None) -> dict:
             break
     base = {"code": inst.code, "symbol": inst.symbol, "name": inst.name, "digits": inst.digits if inst.digits < 4 else 4}
     if bs is None or not bs.ok:
+        from app.connectors import tickbase
         from app.data import indicative
 
+        backup = tickbase.quote(code, now)  # TickBase: the real spot price WITH its quote time (only on this PC, with a key)
+        if backup is not None:
+            return backup
         ind = indicative.quote(code, now)  # real spot gold/silver, but without a quote time: labelled ORIENTAČNÍ
         if ind is not None:
             return ind

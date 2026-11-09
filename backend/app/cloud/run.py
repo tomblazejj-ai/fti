@@ -32,6 +32,9 @@ def compute(out: Path) -> tuple[dict, bool]:
     from app.ingestion import run_ingest
     from app.main import app
 
+    import os
+
+    os.environ["FTI_PUBLIC_EXPORT"] = "1"  # anyone with the link reads the results: no third-party raw prices in them
     summary: dict = {}
     init_db()
     ok = True

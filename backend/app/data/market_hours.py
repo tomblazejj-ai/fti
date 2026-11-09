@@ -40,6 +40,40 @@ LABELS_CS = {OPEN: "trh otevřen", CLOSED: "trh zavřen", PRE: "předobchodní f
              BREAK: "přestávka v obchodování", HOLIDAY: "svátek — zavřeno", UNKNOWN: "stav nelze ověřit"}
 
 
+# --- trading day of gold and forex ----------------------------------------------------------------
+# The day runs from 17:00 New York to 17:00 New York and is named by its second date — the broker's daily candle
+# (MT5 server time = New York + 7 h, so the candle starts at 00:00 server time). Five daily candles a week, no Sunday
+# stub. A daily bar that starts at 00:00 UTC (ECB, FRED, NBP …) keeps its own UTC date under the same rule.
+
+def trading_date(t: int | float | dt.datetime) -> dt.date:
+    when = t if isinstance(t, dt.datetime) else dt.datetime.fromtimestamp(t, dt.timezone.utc)
+    return (when.astimezone(NY).replace(tzinfo=None) + dt.timedelta(hours=7)).date()
+
+
+_day_start: dict[int, int] = {}
+
+
+def trading_day_start(t: int) -> int:
+    """Unix start (17:00 New York the evening before) of the trading day that contains t. New York's offset is whole
+    hours, so every UTC hour lies in one trading day — memoised per hour."""
+    h = int(t) - int(t) % 3600
+    s = _day_start.get(h)
+    if s is None:
+        d = trading_date(h)
+        s = int((dt.datetime(d.year, d.month, d.day, tzinfo=NY) - dt.timedelta(hours=7)).timestamp())
+        _day_start[h] = s
+    return s
+
+
+def trading_week_start(t: int) -> int:
+    """Unix start of the trading week that contains t: Saturday 17:00 New York (Sunday 00:00 server time, the broker's
+    weekly candle); its first trading day is Monday."""
+    d = trading_date(trading_day_start(t))
+    # Saturday 17:00 → Sunday 17:00 has the trading date Sunday and already belongs to the NEXT week's Monday
+    monday = d + dt.timedelta(days=1) if d.weekday() == 6 else d - dt.timedelta(days=d.weekday())
+    return int((dt.datetime(monday.year, monday.month, monday.day, tzinfo=NY) - dt.timedelta(days=1, hours=7)).timestamp())
+
+
 # --- holiday rules -----------------------------------------------------------------------------
 def easter(year: int) -> dt.date:
     """Gregorian Easter Sunday (anonymous algorithm)."""

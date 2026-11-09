@@ -6,7 +6,8 @@ previous one and asks AI only about what really changed.
   * a new, clearly relevant news item (classifier relevance ≥ 0.5, not a duplicate) → news analysis, at most 2
   * twice a day, before London and before New York → briefing
   * XAU/USD complex analysis (LONG / SHORT / NO TRADE, several AI roles) when its data really changed: BIAS or
-    score, the intraday or swing trend turned, headline risk reached "high", or an important (3/3) calendar event
+    score, the intraday or swing trend turned, the market regime changed (trend / volatility / risk mood / dollar),
+    headline risk reached "high", or an important (3/3) calendar event
     was released — at most TRADE_PER_DAY a day (it costs 3 requests)
 
 Off unless the user switches automatic analyses on (Settings → AI). At most MAX_PER_CYCLE requests
@@ -50,6 +51,11 @@ def trade_reason(new: dict, old: dict, new_at: dt.datetime, old_at: dt.datetime)
         a, b = ((old.get("mtf") or {}).get(key) or {}), ((new.get("mtf") or {}).get(key) or {})
         if a.get("direction") and b.get("direction") and a["direction"] != b["direction"]:
             return "normal", f"{label} {a.get('word')} → {b.get('word')}"
+    from app.market import regime
+
+    moved = regime.change(new.get("regime"), old.get("regime"))
+    if moved:  # the kind of market changed (trend ↔ range, volatility class, risk mood, dollar)
+        return "normal", "režim trhu: " + "; ".join(moved)
     if (new.get("headline_risk") or {}).get("level") == 2 and (old.get("headline_risk") or {}).get("level", 0) < 2:
         return "normal", "riziko titulků je vysoké"
     for e in (new.get("calendar") or {}).get("events", []):

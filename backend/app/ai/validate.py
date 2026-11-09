@@ -15,11 +15,15 @@ import re
 
 SMALL_INTS = set(range(0, 13))  # counts and horizons ("2 faktory", "3 dny") — not market data
 _LETTER = "A-Za-zÀ-žĀ-ſ"
+# an indicator's name with its periods ("EMA20/50", "EMA 20/50", "RSI14"), not a value. Found 8. 11. 2026 in the cloud:
+# "/50" counted as an unknown number and threw away the whole technical role. "ATR 25" (a space, one number) stays a value.
+INDICATOR = re.compile(r"(?i)\b(?:ema|sma|ma|rsi|adx|atr|macd)(?:\s?\d+(?:\s?/\s?\d+)+|\d+)")
 _STRIP = [
     re.compile(r"\bF\d+\b"),  # fact ids
     re.compile(r"\b\d{1,2}:\d{2}\b"),  # times
     re.compile(r"\b\d{4}-\d{2}-\d{2}(?:T[\d:.+\-Z]*)?"),  # ISO dates
     re.compile(r"\b\d{1,2}\.\s?\d{1,2}\.(?:\s?\d{4})?"),  # Czech dates 3. 11. 2026
+    INDICATOR,
 ]
 # a number glued to letters is part of a word ("2letý", "200denní", "H4") — except unit suffixes ("7.11M", "54.7K")
 _SUFFIX = rf"(?:[KMBkmb](?![{_LETTER}]))?"

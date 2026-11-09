@@ -31,6 +31,7 @@ import httpx
 from app.connectors import kraken
 from app.connectors.kraken import Candle
 from app.market import mtf
+from app.data.market_hours import trading_date
 
 CONST = 50.14348112
 # Kraken pair -> (exponent, quoted as USD per foreign unit?)
@@ -208,8 +209,8 @@ def analyze(gold_candles: dict[str, list[Candle]], dxy_candles: dict[str, list[C
     beta60 = (corr.get("d60") or {}).get("beta")
 
     # overlay chart: last 120 common daily closes of both, as % from the first one
-    g = {c.time.date().isoformat(): c.close for c in gold_candles.get("D1", [])}
-    d = {c.time.date().isoformat(): c.close for c in dxy_candles.get("D1", [])}
+    g = {trading_date(c.time).isoformat(): c.close for c in gold_candles.get("D1", [])}
+    d = {trading_date(c.time).isoformat(): c.close for c in dxy_candles.get("D1", [])}
     days = sorted(set(g) & set(d))[-120:]
     overlay = [{"date": day, "gold": round((g[day] / g[days[0]] - 1) * 100, 2), "dxy": round((d[day] / d[days[0]] - 1) * 100, 2)}
                for day in days] if days else []

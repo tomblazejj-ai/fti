@@ -1889,3 +1889,147 @@ a.tile:hover .tile-go {
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* market regime (Ú2): the colour of a state is orientation, not a trade signal */
+.dtable.regime td:first-child {
+  white-space: nowrap;
+  font-weight: 600;
+}
+.rg-pos strong {
+  color: var(--pos, #0f8a5f);
+}
+.rg-neg strong {
+  color: var(--neg, #c2410c);
+}
+.rg-muted strong {
+  color: var(--muted);
+}
+
+/* LIVE terminal (test version) */
+.lgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ltile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 14px 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: #fff;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  min-width: 0;
+}
+.ltile.is-sel {
+  border-color: var(--accent, #2563eb);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #2563eb) 25%, transparent);
+}
+.ltile-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ltile-price {
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.6s ease;
+}
+.ltile-price.flash-up {
+  color: var(--pos);
+}
+.ltile-price.flash-down {
+  color: var(--neg);
+}
+.ltile-chg {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.ltile-chg small,
+.ltile-meta,
+.ltile-src,
+.ltile-note {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.ltile-chg.t-pos {
+  color: var(--pos);
+}
+.ltile-chg.t-neg {
+  color: var(--neg);
+}
+.ltile-ba {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.ltile-note {
+  color: #92400e;
+}
+.lbadge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  color: #374151;
+}
+.lbadge.st-live {
+  background: var(--pos-bg);
+  color: var(--pos);
+}
+.lbadge.st-delayed {
+  background: #fef3c7;
+  color: #92400e;
+}
+.lbadge.st-unavailable {
+  background: #fee2e2;
+  color: var(--neg);
+}
+.lconn {
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: 10px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #fee2e2;
+  color: var(--neg);
+  vertical-align: middle;
+}
+.lconn.is-on {
+  background: var(--pos-bg);
+  color: var(--pos);
+}
+.ltile-badges {
+  display: flex;
+  gap: 6px;
+}
+.lbadge.mk-open {
+  background: #e0f2fe;
+  color: #075985;
+}
+.ltile-banner,
+.lbanner {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+.lbanner {
+  font-size: 13px;
+  padding: 10px 14px;
+  margin: 0 0 12px;
+}

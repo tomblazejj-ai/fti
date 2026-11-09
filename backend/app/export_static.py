@@ -34,6 +34,9 @@ def targets(names: set[str] | None = None) -> dict[str, str]:
         "/api/data/audit": "audit.json",
         "/api/sources": "sources.json",
         "/api/ai/analyses?code=XAUUSD&limit=10": "ai.json",  # the last AI analyses (complex one and interpretation)
+        "/api/regime": "regime.json",  # market regime of gold (Ú2)
+        "/api/intermarket/intel?tf=D1": "intermarket-D1.json",  # Intermarket Intelligence (synchronised correlations)
+        "/api/intermarket/intel?tf=H1": "intermarket-H1.json",
     }
     for code, tfs in CANDLES.items():
         for tf in tfs:
@@ -52,8 +55,33 @@ def collect(client, names: set[str] | None = None) -> tuple[dict[str, str], list
         body = resp.json()
         if name == "sources.json":
             body = {k: v for k, v in body.items() if k not in PRIVATE}
-        files[name] = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+        files[name] = json.dumps(_without_tickbase_prices(body), ensure_ascii=False, separators=(",", ":"))
     return files, problems
+
+
+_PRICE_KEYS = ("price", "value", "bid", "ask", "quote", "last_quote")
+
+
+def _without_tickbase_prices(node):
+    """TickBase's terms forbid sharing its raw answers and these files are public: wherever a value came from TickBase
+    (provider "tickbase" or a source named TickBase), its price is removed — FTI's own check result stays."""
+    if isinstance(node, list):
+        return [_without_tickbase_prices(v) for v in node]
+    if not isinstance(node, dict):
+        return node
+    from_tickbase = node.get("provider") == "tickbase" or str(node.get("source") or "").startswith("TickBase (záloha")
+    out = {}
+    for k, v in node.items():
+        if k == "quote" and isinstance(v, dict) and node.get("source") == "TickBase":
+            continue  # the check's own copy of the price (kept only on the PC)
+        if from_tickbase and k in _PRICE_KEYS:
+            out[k] = None
+            continue
+        out[k] = _without_tickbase_prices(v)
+    if from_tickbase:
+        out["available"] = False
+        out["note_public"] = "Záložní cena TickBase se podle jeho podmínek nezveřejňuje — jen na PC."
+    return out
 
 
 def export(out_dir: Path, run_cycle: bool = False) -> list[str]:

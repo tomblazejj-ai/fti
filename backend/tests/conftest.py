@@ -1,6 +1,7 @@
 import os
 
 os.environ["FTI_DISABLE_SCHEDULER"] = "1"  # tests must never trigger real network ingestion
+os.environ["FTI_DISABLE_LIVE"] = "1"  # tests must never start the LIVE engine (it would stream into the real fti.db)
 
 import pytest  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
@@ -9,6 +10,15 @@ from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app import models  # noqa: E402,F401 — registers models on Base.metadata
 from app.db import Base  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _own_settings_file(monkeypatch, tmp_path):
+    """Every test gets its own (empty → default) settings file — never the user's fti_settings.json (9. 11. 2026: with
+    LIVE switched on there, a test started the live engine)."""
+    from app.data import settings_store
+
+    monkeypatch.setattr(settings_store, "SETTINGS_FILE", tmp_path / "fti_settings.json")
 
 
 @pytest.fixture(autouse=True)
@@ -110,7 +120,7 @@ def _no_portals_or_translation(monkeypatch):
 
     dukascopy.reset()
 
-    def no_dukascopy(symbol, sec, days, now=None):
+    def no_dukascopy(symbol, sec, days, now=None, **kw):
         raise dukascopy.DukascopyUnavailable("v testech se nestahuje")
 
     monkeypatch.setattr(dukascopy, "bars", no_dukascopy)
@@ -118,6 +128,31 @@ def _no_portals_or_translation(monkeypatch):
 
     monkeypatch.setattr(mt5_feed, "terminal_running", lambda path: False)  # no process lookups in tests
     monkeypatch.setattr(secrets, "get", lambda name: "")
+    import httpx
+
+    from app.connectors import tickbase
+
+    from app.market import actuals
+
+    actuals._pending.clear()  # FRED/ALFRED never reached from tests either
+    monkeypatch.setattr(actuals, "_transport", httpx.MockTransport(lambda req: httpx.Response(503)))
+    from app.market import intermarket_data
+
+    monkeypatch.setattr(intermarket_data, "update_recent", lambda *a, **k: {})  # no Dukascopy downloads in tests
+    monkeypatch.setattr(intermarket_data, "backfill_h1", lambda *a, **k: {})
+    monkeypatch.setattr(intermarket_data, "run", lambda *a, **k: {})
+    monkeypatch.setattr(intermarket_data, "fxcm_run", lambda *a, **k: {})  # nor FXCM's archive
+    monkeypatch.setattr(dukascopy, "_transport", httpx.MockTransport(lambda req: httpx.Response(503)))
+    import tempfile
+    from pathlib import Path
+
+    from app.connectors import fxcm
+
+    monkeypatch.setattr(fxcm, "_transport", httpx.MockTransport(lambda req: httpx.Response(503)))
+    monkeypatch.setattr(fxcm, "CACHE_DIR", Path(tempfile.mkdtemp(prefix="fti-fxcm-test-")))  # never the real cache
+    tickbase.clear()  # TickBase never reached from tests: every request answers 503 unless a test sets a transport
+    monkeypatch.setattr(tickbase, "_transport", httpx.MockTransport(
+        lambda req: httpx.Response(503, json={"error": {"code": "upstream_unavailable", "status": 503}})))
 
 
 @pytest.fixture()

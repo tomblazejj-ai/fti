@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { staticPath } from "./lib/api";
 import { countdown, pct, price, relativeTime, shortDate } from "./lib/format";
-import type { CalendarAll, MarketCard, MarketsResponse } from "./lib/types";
+import type { CalendarAll, IntermarketResult, MarketCard, MarketRegime, MarketsResponse } from "./lib/types";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -58,7 +58,29 @@ const CAL: CalendarAll = {
   events: [
     { datetime: "2026-11-02T15:00:00+00:00", currency: "USD", title_cs: "ISM PMI průmysl", title_en: "ISM Manufacturing PMI", impact: 3, forecast: "49.8", previous: "49.1", source: "ForexFactory" },
     { datetime: "2026-11-03T09:00:00+00:00", currency: "EUR", title_cs: "Nezaměstnanost", title_en: "Unemployment Rate", impact: 1, forecast: null, previous: "6.6%", source: "ForexFactory" },
+    { datetime: "2026-10-30T12:30:00+00:00", currency: "USD", title_cs: "Nová pracovní místa NFP", title_en: "Non-Farm Employment Change", impact: 3,
+      forecast: "65K", previous: "29K", source: "ForexFactory", actual: "165K", previous_revised: "60K",
+      actual_source: "BLS přes ALFRED/FRED (stav ke dni vydání 2026-10-30, řada PAYEMS) — ověřeno u vydavatele", actual_status: "ověřeno u vydavatele" },
+    { datetime: "2026-10-30T12:30:00+00:00", currency: "USD", title_cs: "Žádosti o podporu", title_en: "Unemployment Claims", impact: 2,
+      forecast: "197K", previous: "194K", source: "ForexFactory", actual: "189K", actual_status: "neověřeno u vydavatele" },
+    { datetime: "2026-10-30T14:00:00+00:00", currency: "USD", title_cs: "ISM služby", title_en: "ISM Services PMI", impact: 2,
+      forecast: "54.8", previous: "54.9", source: "ForexFactory", actual_note: "Skutečnost: bez volného oficiálního zdroje — ISM (soukromá organizace)." },
   ],
+};
+
+const IM: IntermarketResult = {
+  tf: "D1", target_label: "Zlato (XAU/USD)", computed_at: "2026-10-31T10:00:00+00:00", main_window: 60, windows: [30, 60, 120, 250],
+  causality: "Korelace měří souběh pohybů, ne příčinu.",
+  relations: [{
+    b: "DXY*@mt5", b_code: "DXY*", label: "Dolarový index DXY*", category: "vypočtený index", tf: "D1", observations_total: 380,
+    windows: [{ window: 60, n: 60, n_eff: 55, r: -0.47, p: 0.0002, ci95: [-0.65, -0.23], strength: "střední záporná", sufficiency: "dostatečný" },
+              { window: 250, n: 250, n_eff: 240, r: -0.45, p: 0, ci95: null, strength: "střední záporná", sufficiency: "dobrý" }],
+    last_common: "2026-10-30T22:00:00+00:00", sources: ["Dukascopy", "výpočet FTI z MT5 + ECB"], proxy: false, related: null,
+    stability: { verdict: "stabilní", same_sign_share: 1, mean: -0.5 }, breakdown: { state: "drží" },
+    change: { r_now: -0.47, r_prev: -0.56, delta: 0.09, p: 0.54, significant: false },
+    move: { bars: 5, gold_pct: 5.03, other: 0.33, other_unit: "%", verdict: "odporuje", text: "", until: "2026-10-30T22:00:00+00:00" },
+    quality: { label: "použitelná", issues: ["vypočtený index (vzorec ICE z kurzů), ne oficiální kotace"] },
+  }],
 };
 
 function mock() {
@@ -66,6 +88,7 @@ function mock() {
     const path = String(input).split("?")[0];
     if (path === "/api/markets") return Response.json(MARKETS);
     if (path === "/api/calendar") return Response.json(CAL);
+    if (path === "/api/intermarket/intel") return Response.json(IM);
     if (path === "/api/tickers") return Response.json({ live: [], daily: [], error: null, fetched_at: "", market: { open: true } });
     if (path.endsWith("/candles")) return Response.json({ tf: "D1", source: "Kraken", candles: [], fetched_at: "" });
     return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
@@ -118,7 +141,7 @@ describe("Home", () => {
     render(<App />);
     await screen.findByRole("heading", { name: "Kam míří trhy" });
     const menu = screen.getByRole("navigation", { name: "Hlavní menu" });
-    expect(within(menu).getAllByRole("link").map((a) => a.textContent?.trim())).toEqual(["Přehled", "Kalendář", "Zprávy", "Data"]);
+    expect(within(menu).getAllByRole("link").map((a) => a.textContent?.trim())).toEqual(["Přehled", "Živě", "Kalendář", "Zprávy", "Data"]);
   });
 });
 
@@ -171,6 +194,157 @@ describe("Calendar and news", () => {
     expect(screen.getByText("Nezaměstnanost")).toBeInTheDocument();
     expect(screen.getByText("Další zpráva s vysokým dopadem")).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(STRATEGY);
+  });
+
+  it("shows gold's intermarket relationships with n, stability, the latest move and data quality", async () => {
+    const gold = card({ code: "XAUUSD", name: "Zlato", subtitle: "Zlato / americký dolar" });
+    const base = mock();
+    base.mockImplementation(async (input) => {
+      const path = String(input).split("?")[0];
+      if (path === "/api/markets") return Response.json({ ...MARKETS, markets: [...MARKETS.markets, gold] });
+      if (path === "/api/intermarket/intel") return Response.json(IM);
+      if (path === "/api/tickers") return Response.json({ live: [], daily: [], error: null, fetched_at: "", market: { open: true } });
+      if (path.endsWith("/candles")) return Response.json({ tf: "D1", source: "Dukascopy", candles: [], fetched_at: "" });
+      return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
+    });
+    window.location.hash = "#/trh/XAUUSD";
+    render(<App />);
+    expect(await screen.findByText("Mezitrh – vztahy se zlatem")).toBeInTheDocument();
+    const row = (await screen.findAllByText("Dolarový index DXY*")).map((e) => e.closest("tr")).find(Boolean)!;
+    expect(row).toHaveTextContent("−0,47");
+    expect(row).toHaveTextContent("n 60, efektivně 55");
+    expect(row).toHaveTextContent("odporuje");
+    expect(row).toHaveTextContent("vypočtený index");
+    expect(screen.getByText(/Odporují:/).closest("p")).toHaveTextContent("Odporují: Dolarový index DXY*");
+    expect(document.body.textContent).toContain("ne příčinu");
+  });
+
+  it("shows gold's market regime with each dimension, its data and what it means — or says it is not computed yet", async () => {
+    const gold = card({ code: "XAUUSD", name: "Zlato", subtitle: "Zlato / americký dolar" });
+    const regime: MarketRegime = {
+      as_of: "2026-11-09T08:28:00+00:00", computed_at: "2026-11-09T08:28:00+00:00",
+      label: "Klesající trend · volatilita běžná · riziková averze", summary: "Trend: klesající trend.", missing: [],
+      method: "Deterministicky.", note: "Režim trhu je kontext, ne hlas ve verdiktu.",
+      atr: { d1: 79.9, pct_of_price: 1.97, percentile: 71, window: 250, as_of: "2026-11-06" },
+      dimensions: [
+        { key: "trend", label: "Trend", state: "trend_down", word: "Klesající trend", available: true,
+          detail: "D1: dolů, ADX 26,3 (trend od 25, slabý od 20).", implication: "Obchody ve směru trendu.",
+          inputs: [{ name: "ADX D1", value: 26.3, source: "Dukascopy", as_of: "2026-11-08T22:00:00+00:00" }] },
+        { key: "korelace", label: "Vztahy se zlatem", state: "unknown", word: "nelze určit", available: false,
+          detail: "Výsledek Intermarket Intelligence D1 FTI teď nemá.", implication: null, inputs: [] },
+      ],
+    };
+    let ready = false;
+    const base = mock();
+    base.mockImplementation(async (input) => {
+      const path = String(input).split("?")[0];
+      if (path === "/api/markets") return Response.json({ ...MARKETS, markets: [...MARKETS.markets, gold] });
+      if (path === "/api/regime") return ready ? Response.json(regime)
+        : new Response(JSON.stringify({ detail: "Režim trhu se ještě počítá — přijde s nejbližším výpočtem FTI." }), { status: 404 });
+      if (path === "/api/tickers") return Response.json({ live: [], daily: [], error: null, fetched_at: "", market: { open: true } });
+      if (path.endsWith("/candles")) return Response.json({ tf: "D1", source: "Dukascopy", candles: [], fetched_at: "" });
+      return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
+    });
+    window.location.hash = "#/trh/XAUUSD";
+    const first = render(<App />);
+    expect(await screen.findByText(/Režim trhu se ještě počítá/)).toBeInTheDocument();  // said, never invented
+    first.unmount();
+    ready = true;
+    render(<App />);
+    expect(await screen.findByText("Klesající trend · volatilita běžná · riziková averze")).toBeInTheDocument();
+    const trend = screen.getByText("Klesající trend").closest("tr")!;
+    expect(trend).toHaveTextContent("ADX 26,3");
+    expect(trend).toHaveTextContent("Dukascopy");
+    expect(trend).toHaveTextContent("Obchody ve směru trendu.");
+    expect(screen.getByText("nelze určit").closest("tr")).toHaveTextContent("Intermarket Intelligence D1 FTI teď nemá");
+    expect(document.body.textContent).toContain("kontext, ne hlas ve verdiktu");
+  });
+
+  it("live terminal: says it is off, never invents a price", async () => {
+    const base = mock();
+    base.mockImplementation(async (input) => {
+      const path = String(input).split("?")[0];
+      if (path === "/api/live/snapshot")
+        return new Response(JSON.stringify({ detail: "Živá data jsou vypnutá (Nastavení → LIVE)." }), { status: 503 });
+      if (path === "/api/tickers") return Response.json({ live: [], daily: [], error: null, fetched_at: "", market: { open: true } });
+      return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
+    });
+    class FakeES {
+      onopen: (() => void) | null = null;
+      onmessage: ((e: { data: string }) => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor() {
+        setTimeout(() => this.onerror?.(), 0);
+      }
+      close() {}
+    }
+    vi.stubGlobal("EventSource", FakeES);
+    window.location.hash = "#/zive";
+    render(<App />);
+    expect(await screen.findByText(/Živá data jsou vypnutá/)).toBeInTheDocument();
+    expect(document.body.textContent).toContain("stream nepřipojen");
+    vi.unstubAllGlobals();
+  });
+
+  it("live terminal: streamed prices with state, bid/ask, change and source", async () => {
+    mock();
+    const snap = {
+      version: 3, at: "2026-11-09T09:20:00+00:00", running: true,
+      instruments: [
+        { code: "XAUUSD", label: "XAUUSD", name: "Zlato", kind: "spot_metal", digits: 2, status: "LIVE", status_cs: "živě",
+          failover: false, notes: [], provider: "deriv", product: "Deriv Gold/USD — kotace brokera Deriv", price_type: "mid",
+          bid: 4096.0, ask: 4096.58, spread: 0.58, mid: 4096.29, time_basis: "quote", quote_time: "2026-11-09T09:19:59+00:00",
+          age_s: 0.3, prev_close: 4055.42, prev_close_day: "2026-11-06", change: 40.87, change_pct: 1.008,
+          providers: [{ provider: "deriv", symbol: "frxXAUUSD", role: "primary", product: "Deriv Gold/USD", age_s: 0.3, fresh: true,
+                        in_session: true, compat: null }] },
+        { code: "US500.CFD", label: "US500", name: "S&P 500 — CFD", kind: "cfd_index", digits: 1, status: "HISTORICAL",
+          status_cs: "historická cena", failover: false, market_status: "OPEN", market_status_cs: "trh otevřen",
+          banner: "TRH OTEVŘEN – DATA NEAKTUÁLNÍ", notes: ["Deriv kotuje US500 jen 6–21 h UTC."], provider: "deriv",
+          product: "Deriv US 500 — OTC index (CFD, ne index sám)", bid: 7409.6, ask: 7410, spread: 0.4, mid: 7409.8,
+          quote_time: "2026-11-08T20:59:59+00:00", age_s: 44400, change: null, change_pct: null, providers: [] },
+      ],
+    };
+    class FakeES {
+      onopen: (() => void) | null = null;
+      onmessage: ((e: { data: string }) => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor() {
+        setTimeout(() => {
+          this.onopen?.();
+          this.onmessage?.({ data: JSON.stringify(snap) });
+        }, 0);
+      }
+      close() {}
+    }
+    vi.stubGlobal("EventSource", FakeES);
+    window.location.hash = "#/zive";
+    render(<App />);
+    const gold = (await screen.findByText("4 096,29")).closest("button")!;
+    expect(gold).toHaveTextContent("LIVE");
+    expect(gold).toHaveTextContent("Bid 4 096,00");
+    expect(gold).toHaveTextContent("Ask 4 096,58");
+    expect(gold).toHaveTextContent("+40,87 (+1,01 %)");
+    expect(gold).toHaveTextContent("proti závěru 2026-11-06");
+    expect(gold).toHaveTextContent("Deriv Gold/USD");
+    const spx = screen.getByText("US500").closest("button")!;
+    expect(spx).toHaveTextContent("HISTORICAL");
+    expect(spx).toHaveTextContent("ne index sám");
+    expect(spx).toHaveTextContent("jen 6–21 h UTC");
+    expect(spx).toHaveTextContent("TRH OTEVŘEN – DATA NEAKTUÁLNÍ");  // market open, data not live: said loudly
+    expect(screen.getByRole("alert")).toHaveTextContent("US500: TRH OTEVŘEN – DATA NEAKTUÁLNÍ");
+    expect(document.body.textContent).toContain("stream připojen");
+    vi.unstubAllGlobals();
+  });
+
+  it("shows the official actual of a released event next to forecast and previous", async () => {
+    mock();
+    window.location.hash = "#/kalendar";
+    render(<App />);
+    const actual = await screen.findByText("skutečnost 165K");
+    expect(actual.closest("small")).toHaveTextContent("skutečnost 165K · prognóza 65K · minule 29K (revize 60K)");
+    expect(actual.closest("small")).toHaveAttribute("title", expect.stringContaining("PAYEMS"));
+    expect(screen.getByText(/bez volného oficiálního zdroje — ISM/)).toBeInTheDocument();
+    expect(screen.getByText("skutečnost 189K").closest("small")).toHaveTextContent("skutečnost 189K (neověřeno u vydavatele)");
   });
 
   it("switches between news and technical outlooks", async () => {

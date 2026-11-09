@@ -43,6 +43,7 @@ def feed(monkeypatch, tmp_path):
     monkeypatch.setattr(dukascopy, "CACHE_DIR", tmp_path)
     monkeypatch.setattr(dukascopy, "MIN_INTERVAL", 0.0)
     monkeypatch.setattr(bars, "DUKASCOPY_DAYS", {**bars.DUKASCOPY_DAYS, "D1": 10, "H4": 6})  # small windows, quick tests
+    monkeypatch.setattr(bars, "DUKASCOPY_MONTHS", {})  # the minute-file path; the monthly files: test_dukascopy_daily.py
     dukascopy.reset()
     state = {"seen": [], "fail": None}
 
@@ -93,7 +94,7 @@ def test_history_is_collected_while_another_feed_is_shown(feed, db, monkeypatch)
     assert {r[10] for r in h1} <= {"DELAYED", "STALE"} and h1[-1][10] == "DELAYED"
     assert all(r[8] is None for r in h1)  # no fake volume for an OTC bank quote
     d1 = _rows(db, provider="dukascopy", tf="D1")
-    today0 = int(dt.datetime(2026, 11, 3, tzinfo=UTC).timestamp())
+    today0 = int(dt.datetime(2026, 11, 2, 22, tzinfo=UTC).timestamp())  # the trading day starts 17:00 New York (EST)
     assert d1[-1][3] == today0 and not d1[-1][9]  # today's daily bar is still forming → never closed
     assert all(r[9] for r in d1[:-1])
     assert {r[2] for r in _rows(db, provider="dukascopy")} == {"M1", "M5", "M15", "H1", "H4", "D1", "W1"}

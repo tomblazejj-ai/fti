@@ -46,6 +46,9 @@ FEED_KIND = {
     "dukascopy": ("delayed_bank_quote", "tick"),
 }
 DUKASCOPY_DAYS = {"M1": 2, "M5": 4, "M15": 7, "M30": 10, "H1": 14, "H4": 45, "D1": 200, "W1": 200}  # history it builds up
+# daily and weekly history older than this month from Dukascopy's monthly hour files (one file a month): 15 months
+# ≈ 320 trading days, enough for SMA200 with its slope — 200 days of minute files gave only ~140 trading days
+DUKASCOPY_MONTHS = {"D1": 15, "W1": 15}
 FEED_NAME = {
     "mt5": "MetaTrader 5 (broker)", "oanda": "OANDA v20", "kraken": "Kraken", "ecb": "ECB referenční kurzy",
     "fred": "FRED (St. Louis Fed)", "eia": "EIA (US Energy Information Administration)", "cboe": "CBOE",
@@ -392,14 +395,15 @@ def _fetch(provider: str, symbol: str, tf: str, inst: universe.Instrument, now: 
         if tf not in DUKASCOPY_DAYS:
             raise FeedError(f"Dukascopy: rámec {tf} FTI nepodporuje.")
         sec = 86400 if tf in ("D1", "W1") else TF_MINUTES[tf] * 60
+        months = DUKASCOPY_MONTHS.get(tf, 0)
         try:
-            got, meta = _cached(("dukascopy", symbol, sec, DUKASCOPY_DAYS[tf]), 300.0,
-                                lambda: dukascopy.bars(symbol, sec, DUKASCOPY_DAYS[tf], now))
+            got, meta = _cached(("dukascopy", symbol, sec, DUKASCOPY_DAYS[tf], months), 300.0,
+                                lambda: dukascopy.bars(symbol, sec, DUKASCOPY_DAYS[tf], now, months=months))
         except dukascopy.DukascopyUnavailable as exc:
             raise FeedError(str(exc)) from exc
         if not got:
             raise FeedPending("Dukascopy zatím nedodal žádná data (historie se doplňuje po několika souborech).")
-        return (dukascopy.keep_whole(resample(got, "W1"), 7 * 86400, meta.get("covered") or []) if tf == "W1" else got), meta
+        return (dukascopy.keep_whole(dukascopy.weekly(got), 7 * 86400, meta.get("covered") or []) if tf == "W1" else got), meta
     raise FeedError(f"Neznámý zdroj {provider}")
 
 
@@ -699,7 +703,7 @@ def collect_history(now: dt.datetime | None = None) -> dict:
             sec = 86400 if tf == "D1" else TF_MINUTES[tf] * 60
             t0 = time.monotonic()
             try:
-                got, meta = dukascopy.bars(symbol, sec, DUKASCOPY_DAYS[tf], now, budget=budget)
+                got, meta = dukascopy.bars(symbol, sec, DUKASCOPY_DAYS[tf], now, budget=budget, months=DUKASCOPY_MONTHS.get(tf, 0))
             except dukascopy.DukascopyUnavailable as exc:
                 health.record(f"feed:{provider}", FEED_NAME[provider], ok=False, error=str(exc))
                 report[f"{code} {tf}"] = {"error": str(exc)}
@@ -711,7 +715,7 @@ def collect_history(now: dt.datetime | None = None) -> dict:
 
             mstate = market_hours.state(inst, now)
             q = _dukascopy_quality(inst, got, sec, now, mstate.get("state") == market_hours.OPEN, mstate, False)[0]
-            sets = [(tf, got)] + ([("W1", dukascopy.keep_whole(resample(got, "W1"), 7 * 86400, meta.get("covered") or []))]
+            sets = [(tf, got)] + ([("W1", dukascopy.keep_whole(dukascopy.weekly(got), 7 * 86400, meta.get("covered") or []))]
                                   if tf == "D1" else [])
             for tf_out, rows in sets:
                 rows, dropped = validate(rows)

@@ -84,11 +84,14 @@ export function CalendarPage() {
                     <span className={`cal-cur c-${e.currency}`}>{e.currency}</span>
                     <span className="cal-title">
                       {e.title_cs}
-                      {(e.forecast || e.previous) && (
-                        <small>
-                          {e.forecast ? `prognóza ${e.forecast}` : ""}{e.forecast && e.previous ? " · " : ""}{e.previous ? `minule ${e.previous}` : ""}
+                      {(e.actual || e.forecast || e.previous) && (
+                        <small title={e.actual_source || undefined}>
+                          {e.actual ? <strong>skutečnost {e.actual}</strong> : null}{e.actual && e.actual_status && e.actual_status !== "ověřeno u vydavatele" ? ` (${e.actual_status})` : ""}{e.actual && (e.forecast || e.previous) ? " · " : ""}
+                          {e.forecast ? `prognóza ${e.forecast}` : ""}{e.forecast && e.previous ? " · " : ""}
+                          {e.previous ? `minule ${e.previous}${e.previous_revised ? ` (revize ${e.previous_revised})` : ""}` : ""}
                         </small>
                       )}
+                      {!e.actual && e.actual_note && past && <small>{e.actual_note}</small>}
                     </span>
                     <span className="cal-dot" title={IMPACT[e.impact]} aria-label={IMPACT[e.impact]} />
                   </li>
