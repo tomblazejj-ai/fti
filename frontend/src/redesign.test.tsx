@@ -177,3 +177,22 @@ describe("FTI decision for gold", () => {
     expect(screen.getByText(/^Verze/)).toHaveTextContent(/Verze \S+ · build/);
   });
 });
+
+describe("cTrader sign-in card", () => {
+  it("shows only whether keys are stored, the scope and the return address — never a value", async () => {
+    mockFetch((path) =>
+      path === "/api/ctrader/status"
+        ? Response.json({ client_id: true, client_secret: true, access_token: false, refresh_token: false, scope: "accounts",
+                          redirect_uri: "http://127.0.0.1:8000/api/ctrader/oauth/callback", ready_to_sign_in: true,
+                          note: "Přihlášení funguje až ve chvíli, kdy je aplikace FTI v portálu cTrader ve stavu Active." })
+        : null);
+    window.location.hash = "#/data";
+    render(<App />);
+    const card = await screen.findByRole("region", { name: "cTrader — Purple Trading (jen čtení)" });
+    expect(await within(card).findByText("accounts")).toBeInTheDocument();
+    expect(card).toHaveTextContent("Client Secretuloženo");
+    expect(card).toHaveTextContent("Přístupový tokenchybí");
+    expect(card).toHaveTextContent("Active");
+    expect(within(card).getByRole("link", { name: "Přihlásit cTrader (jen čtení)" })).toHaveAttribute("href", "/api/ctrader/oauth/start");
+  });
+});

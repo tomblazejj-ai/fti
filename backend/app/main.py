@@ -83,8 +83,10 @@ app.add_middleware(
 )
 
 from app.api.routes_live import router as live_router  # noqa: E402
+from app.api.routes_ctrader import router as ctrader_router  # noqa: E402
 
 app.include_router(live_router)
+app.include_router(ctrader_router)
 app.include_router(fti_router)
 app.include_router(instruments_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")

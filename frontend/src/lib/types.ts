@@ -708,3 +708,15 @@ export interface GoldAnalysis {
   sources_status?: SourceStatusRow[];
   market?: MarketState;
 }
+
+/** cTrader Open API sign-in state — yes / no only, values never leave the backend (/api/ctrader/status) */
+export interface CtraderStatus {
+  client_id: boolean;
+  client_secret: boolean;
+  access_token: boolean;
+  refresh_token: boolean;
+  scope: string;
+  redirect_uri: string | null;
+  ready_to_sign_in: boolean;
+  note: string;
+}

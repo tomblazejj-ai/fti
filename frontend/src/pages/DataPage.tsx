@@ -29,6 +29,7 @@ export function DataPage() {
       </header>
       {!STATIC && src.data && <Connect s={src.data} onChange={() => { src.reload(); audit.reload(); }} />}
       {!STATIC && <AiCard />}
+      <CtraderCard />
       <Card title="Audit instrumentů" icon={<Icon name="layers" size={16} />} i={2} id="audit"
             extra={audit.data && <span className="card-note">zjištěno {formatDateTime(audit.data.computed_at)}</span>}>
         {audit.error && !audit.data ? <ErrorState message={audit.error.message} onRetry={audit.reload} /> :
@@ -252,6 +253,49 @@ function Connect({ s, onChange }: { s: SourcesResponse; onChange: () => void }) 
 
 /** AI on Groq's FREE plan: the key (stored only on this PC), on/off, the connection test, today's
  * usage against FTI's own caps, the limits Groq reports, and which AI tasks have their inputs. */
+/** cTrader Open API (Purple Trading demo) — sign-in in the browser, read-only. Values of keys are never shown. */
+function CtraderCard() {
+  const st = useAsync(() => api.ctraderStatus(), []);
+  const s = st.data;
+  const yes = (v: boolean) => (v ? "uloženo" : "chybí");
+  return (
+    <Card title="cTrader — Purple Trading (jen čtení)" icon={<Icon name="link" size={16} />} i={1} id="ctrader">
+      {!s ? (
+        <Empty>{st.loading ? "Načítám…" : `Přihlášení cTrader: zatím nedostupné${st.error ? ` (${st.error.message})` : ""}.`}</Empty>
+      ) : (
+        <>
+          <p className="hint" style={{ marginTop: 0 } as CSSProperties}>
+            FTI žádá jen rozsah <strong>{s.scope}</strong> (prohlížení) — nikdy obchodní oprávnění. {s.note}
+          </p>
+          <dl className="meta-list">
+            <dt>Client ID</dt>
+            <dd>{yes(s.client_id)}</dd>
+            <dt>Client Secret</dt>
+            <dd>{yes(s.client_secret)}</dd>
+            <dt>Přístupový token</dt>
+            <dd>{yes(s.access_token)}</dd>
+            <dt>Obnovovací token</dt>
+            <dd>{yes(s.refresh_token)}</dd>
+            <dt>Návratová adresa</dt>
+            <dd className="num">{s.redirect_uri ?? "—"}</dd>
+          </dl>
+          <p className="hint">
+            Návratovou adresu je potřeba zapsat v portálu openapi.ctrader.com → aplikace FTI → Redirect URIs. Client ID a Secret
+            zadej výše v seznamu klíčů (CTRADER_CLIENT_ID, CTRADER_CLIENT_SECRET) — uloží se jen do backend/.env.
+          </p>
+          <div className="form-row">
+            {s.ready_to_sign_in ? (
+              <a className="btn-primary" href="/api/ctrader/oauth/start">Přihlásit cTrader (jen čtení)</a>
+            ) : (
+              <span className="muted">Přihlášení půjde po zadání Client ID a Secret.</span>
+            )}
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 function AiCard() {
   const st = useAsync(() => api.aiStatus(), []);
   const [key, setKey] = useState("");

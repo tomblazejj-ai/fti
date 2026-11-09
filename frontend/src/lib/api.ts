@@ -11,7 +11,7 @@ import type {
   MarketsResponse,
   ProbeRow,
   SourcesResponse,
-  TickersResponse, IntermarketResult, MarketRegime, GoldAnalysis, LiveCandles } from "./types";
+  TickersResponse, IntermarketResult, MarketRegime, GoldAnalysis, LiveCandles, CtraderStatus } from "./types";
 
 // Same-origin by default (the web build is served by FastAPI itself).
 let baseUrl = "";
@@ -130,6 +130,7 @@ export const api = {
         }))
       : request<{ analyses: AiAnalysis[] }>(`/api/ai/analyses?code=${encodeURIComponent(code)}${task ? `&task=${encodeURIComponent(task)}` : ""}&limit=1`),
   aiResume: () => post<AiGroqStatus>("/api/ai/resume", {}),
+  ctraderStatus: () => request<CtraderStatus>("/api/ctrader/status"),
 };
 
 // The phone version shows the snapshot quotes exactly as the central price layer produced them

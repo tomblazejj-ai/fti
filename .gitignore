@@ -19,3 +19,4 @@ cloud/worker/.wrangler/
 cloud/worker/.dev.vars
 backend/fti-console.log
 backend/fti-start.log
+**/__pycache__/

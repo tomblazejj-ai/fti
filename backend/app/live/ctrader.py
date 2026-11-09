@@ -31,6 +31,10 @@ CANDIDATES = {"XAUUSD": ("XAUUSD", "GOLD", "XAUUSD.r", "XAUUSD_ecn"), "EURUSD": 
               "US500.CFD": ("US500", "US 500", "SPX500", "US500.cash", "US500_ecn", "USA500"),
               "US100.CFD": ("NAS100", "US100", "USTEC", "US Tech 100", "NDX100", "US100.cash", "US100_ecn", "USTECH")}
 KEYS = ("CTRADER_CLIENT_ID", "CTRADER_CLIENT_SECRET", "CTRADER_ACCESS_TOKEN")
+# the connection lives (heartbeats) but no price came for this long while a market of the stream is open by its
+# schedule → the stream is stuck: reconnect (master spec 2.1 "detekce zastaveného datového streamu")
+STALL_S = 180
+WATCHED = ("XAUUSD", "EURUSD")  # instruments whose schedule FTI knows (app/data/universe)
 
 
 class CTraderError(RuntimeError):
@@ -69,6 +73,7 @@ class CTrader(Provider):
         self.ids: dict[int, tuple[str | None, str]] = {}  # symbolId → (broker's name, FTI code)
         self.last: dict[int, list] = {}  # symbolId → [bid, ask]
         self.account: int | None = None
+        self.last_spot: float | None = None
 
     async def _call(self, ws, ptype: int, payload: dict, expect: int) -> dict:
         await ws.send(json.dumps({"clientMsgId": uuid.uuid4().hex, "payloadType": ptype, "payload": payload}))
@@ -81,7 +86,9 @@ class CTrader(Provider):
             if pt == expect:
                 return msg.get("payload") or {}
 
-    async def subscribe(self, ws) -> None:
+    async def authorize(self, ws) -> None:
+        """Application → the token's demo account → account → the broker's symbol names. Shared by the live stream
+        and the history client (app/live/ctrader_history.py); never anything that could trade."""
         from app.data import secrets
 
         await self._call(ws, CT["APP_AUTH"], {"clientId": secrets.get("CTRADER_CLIENT_ID"),
@@ -111,8 +118,24 @@ class CTrader(Provider):
         self.metrics.notes["symboly"] = ", ".join(f"{code} = {name}" for name, code in self.ids.values())
         if not self.ids:
             raise CTraderError("NO_SYMBOLS", "žádný z instrumentů FTI na účtu nenalezen")
+
+    async def subscribe(self, ws) -> None:
+        await self.authorize(ws)
+        self.last_spot = time.time()
         await self._call(ws, CT["SUBSCRIBE_SPOTS"], {"ctidTraderAccountId": self.account, "symbolId": list(self.ids)},
                          CT["SUBSCRIBE_SPOTS_RES"])
+
+    def stalled(self, now: float) -> bool:
+        """True when heartbeats come but prices do not, while a watched market is open by its schedule."""
+        if self.last_spot is None or now - self.last_spot < STALL_S:
+            return False
+        try:
+            from app.data import market_hours, universe
+
+            codes = {code for _, code in self.ids.values()} & set(WATCHED)
+            return any(market_hours.state(universe.get(c)).get("state") == market_hours.OPEN for c in codes if universe.get(c))
+        except Exception:  # noqa: BLE001 — without a schedule the stream is not declared stuck
+            return False
 
     async def refresh(self, ws) -> None:
         from app.data import secrets
@@ -137,11 +160,15 @@ class CTrader(Provider):
             return []
         if pt in (CT["TOKEN_INVALIDATED"], CT["CLIENT_DISCONNECT"], CT["ACCOUNT_DISCONNECT"]):
             raise ConnectionError(f"cTrader ukončil spojení ({pt}): {p.get('reason') or ''}")
+        if pt == CT["HEARTBEAT"] and self.stalled(now):
+            self.metrics.error(f"spojení žije, ale ceny nechodí {int(now - (self.last_spot or now))} s — znovu připojuji")
+            raise ConnectionError("cTrader: ceny nechodí, ačkoli trh je otevřený")
         if pt != CT["SPOT"]:
             return []
         sid = int(p.get("symbolId") or 0)
         if sid not in self.ids:
             return []
+        self.last_spot = now
         last = self.last.setdefault(sid, [None, None])
         if p.get("bid") is not None:
             last[0] = int(p["bid"]) / PRICE

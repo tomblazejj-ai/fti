@@ -60,6 +60,9 @@ DEFAULTS: dict = {
     # LIVE DATA ENGINE (streaming quotes, candles from ticks, AI gate) — OFF until the user switches it on: it writes
     # ticks and candles into the database and makes a valid AI trade signal depend on a LIVE price
     "live": {"enabled": False},
+    # cTrader Open API (read-only): the sign-in return address (empty = the address FTI is opened at; set it when FTI runs
+    # on its own domain) and the provider's request limits per second — they can only be lowered (app/live/ctrader_history)
+    "ctrader": {"redirect_uri": "", "limits": {"general": 50, "history": 5}},
     # preferred data provider per instrument, e.g. {"XAUUSD": "dukascopy"}; the others stay as fallbacks with their own history
     "preferred_feeds": {},
     "risk": {"account_size": 10000.0, "account_ccy": "USD", "risk_pct": 1.0, "daily_limit_pct": 3.0, "weekly_limit_pct": 6.0},
