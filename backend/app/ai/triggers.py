@@ -131,7 +131,8 @@ def jobs(session, now: dt.datetime) -> list[dict]:
 
 def after_cycle(session, now: dt.datetime | None = None) -> list[dict]:
     cfg = settings_store.get("ai", {}) or {}
-    if cfg.get("provider") != guard.PROVIDER or not cfg.get("auto_analyses"):
+    # any free provider the user switched on (Gemini first, Groq as backup, or Groq alone) — not only Groq (bug of 9. 11.)
+    if cfg.get("provider") not in guard.FREE_PROVIDERS or not cfg.get("auto_analyses"):
         return []
     now = now or dt.datetime.now(UTC)
     results = []

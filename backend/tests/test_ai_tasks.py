@@ -246,6 +246,22 @@ def test_briefing_runs_once_per_slot(db_session, env):
     assert len(env["seen"]) == 1
 
 
+def test_automatic_analyses_run_with_gemini_as_the_main_provider(db_session, env):
+    """9. 11. 2026: the trigger asked for ai.provider == "groq", so with Gemini first (the user's setting) nothing ran
+    automatically. Any free provider counts; switched off stays off."""
+    from app.ai import triggers
+
+    env["cfg"]["auto_analyses"] = True
+    env["cfg"]["provider"] = "gemini"
+    at = dt.datetime(2026, 11, 2, 6, 5, tzinfo=UTC)
+    _snapshot(db_session, env["inst"], GOLD, at - dt.timedelta(minutes=30))
+    rep = {"titulek": "Ranní přehled", "shrnuti": "Zlato SHORT (−3).", "trhy": [], "udalosti": [], "rizika": []}
+    env["replies"].append(_ok(rep))
+    assert triggers.after_cycle(db_session, now=at) == [{"task": "report", "code": None, "status": "ok"}]
+    env["cfg"]["provider"] = "none"
+    assert triggers.after_cycle(db_session, now=at + dt.timedelta(hours=6)) == []
+
+
 # --- API for the app ----------------------------------------------------------------------------
 
 @pytest.fixture()
