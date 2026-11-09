@@ -18,14 +18,16 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: pages
-  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # one data cycle at a time; it never waits for the backup site (a Pages deployment stuck in "waiting" on 9. 11. 2026
+    # blocked every cycle behind it when both shared one queue)
+    concurrency:
+      group: fti-cycle
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -71,7 +73,7 @@ jobs:
         run: |
           cat > fti_settings.json <<'JSON'
           {"ai": {"provider": "groq", "auto_analyses": true, "daily_request_cap": 80, "daily_token_cap": 100000, "per_minute_cap": 6},
-           "cloud": {"enabled": true, "url": "https://fti.tomblazejj.workers.dev"}}
+           "cloud": {"enabled": true, "url": "${{ vars.FTI_CLOUD_URL || 'https://fti.tomblazejj.workers.dev' }}"}}
           JSON
 
       - name: Data, výpočty a AI (stejný kód jako na PC)
@@ -125,6 +127,10 @@ jobs:
     needs: build
     if: ${{ !cancelled() }}  # the backup site goes out even when only the cloud upload failed
     runs-on: ubuntu-latest
+    # its own queue: a newer backup site replaces one still waiting, and nothing here can hold up the data cycle
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
